@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   QSC Design Tokens — LIGHT THEME (mandatory)
+   Palette: White · Black · Grey · Tech Blue
+   ============================================================ */
+:root {
+  --color-bg: 246 248 251;        /* page background — cool off-white */
+  --color-surface: 255 255 255;   /* cards */
+  --color-border: 226 232 240;    /* slate-200 hairlines */
+  --color-fg: 15 23 42;           /* near-black text */
+  --color-muted: 100 116 139;     /* slate-500 secondary text */
+  --color-primary: 29 78 216;     /* tech blue-700 (AA on white) */
+  --color-primary-strong: 30 58 138; /* blue-900 for headings/accents */
+  --color-success: 21 128 61;     /* green-700 */
+  --color-warning: 180 83 9;      /* amber-700 */
+  --color-danger: 220 38 38;      /* red-600 */
+
+  /* subtle blue gradient stops used for hero / banners only */
+  --grad-from: 239 246 255;       /* blue-50 */
+  --grad-to: 255 255 255;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: rgb(var(--color-bg));
+  color: rgb(var(--color-fg));
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Reusable primitives kept as component classes for consistency */
+@layer components {
+  .card {
+    @apply rounded-xl border border-border bg-surface shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_24px_-12px_rgba(15,23,42,0.12)];
+  }
+  .card-hover {
+    @apply transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(15,23,42,0.06),0_16px_36px_-14px_rgba(29,78,216,0.22)] hover:border-primary/30;
+  }
+  .field {
+    @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted/60 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition;
+  }
+  .section-title {
+    @apply text-xs font-semibold uppercase tracking-[0.12em] text-muted;
+  }
+}
+
+/* ============================================================
+   Motion system (§22 page transitions · §6 hero entrance)
+   GPU-friendly transform/opacity only; respects reduced motion.
+   ============================================================ */
+@keyframes qsc-fade-slide {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes qsc-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes qsc-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  60% {
+    transform: scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes qsc-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(24px, -18px, 0) scale(1.08);
+  }
+}
+
+.anim-page {
+  animation: qsc-fade-slide 0.32s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.anim-enter {
+  animation: qsc-fade-slide 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.anim-pop {
+  animation: qsc-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.anim-fade {
+  animation: qsc-fade 0.7s ease both;
+}
+.anim-drift {
+  animation: qsc-drift 14s ease-in-out infinite;
+}
+
+/* F35 — accessibility basics */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid rgb(var(--color-primary));
+  outline-offset: 2px;
+}

@@ -1,0 +1,2923 @@
+================================================================================
+QUANTUM SECURE COMMUNICATION PLATFORM (QSC)
+MASTER DEVELOPMENT PHASE PLAN
+================================================================================
+VERSION        : 1.0
+STATUS         : PLANNING BASELINE - READY FOR PHASE-BY-PHASE IMPLEMENTATION
+CONTROLLING DOC: QSC Project Specification v1.0 (primary source of truth).
+AUDIENCE       : Agent 1 (Frontend / Track A) and Agent 2 (Backend / Track B).
+WORKSPACE      : C:\Users\smsbh\Desktop\quantam
+REFERENCE IMAGE: None provided at planning time. If supplied later use it ONLY
+                 for visual design reference (layout, spacing, typography,
+                 cards, charts, nav). Never copy static content; never hard-code
+                 dashboard numbers; never let UI logic decide security results.
+                 The image influences PRESENTATION only. Business logic always
+                 follows this plan and the backend.
+
+GLOBAL RULES FOR BOTH AGENTS
+--------------------------------------------------------------------------------
+R1. Backend is the single source of truth for authentication, authorization,
+    communication state, QKD results, QBER, key status, security decisions,
+    attack detection and message delivery. Frontend renders only what the
+    backend returns.
+R2. No hard-coded or fake production data. Every rendered number comes from
+    database-backed APIs or WebSockets. Seed data (if any) is stored in the
+    database through normal code paths and never returned as static literals.
+R3. Shared vocabulary is mandatory: role names (USER/ATTACKER/ADMIN), state
+    names (Section 8), protocol names (Section 13), security status values,
+    message status values, QBER semantics and error codes are identical in
+    both tracks. Both agents implement Section 19 (API Contract) and Section
+    20 (WebSocket Contract) without deviation.
+R4. No Blockchain, physical quantum hardware, voice/video, social media, chat
+    features, extra attack types (only INTERCEPT_AND_RESEND in v1), unnecessary
+    AI models, microservices or cloud infrastructure.
+R5. Any requirement not defined in the specification is tagged [TBD] with a
+    recommended default. Do not silently invent requirements.
+R6. QKD secret keys are never returned to the frontend in any REST or WS
+    payload. Encryption uses a standard cryptographic library only.
+R7. QBER is always computed from actual simulated QKD run data persisted in
+    the database. It is never supplied or interpreted by the frontend.
+
+TAG CONVENTIONS
+--------------------------------------------------------------------------------
+[REQ]  mandatory requirement derived from the specification.
+[REC]  recommended addition justified by correctness/scalability/state
+        management/recommendation storage/real-time needs.
+[TBD]  genuinely unspecified; a default is proposed and agents may propose a
+        better in-scope alternative.
+
+                     DOCUMENT MAP (26 sections)
+--------------------------------------------------------------------------------
+  1  Project Overview                14 Eve Attack Architecture
+  2  Project Objectives                15 Security Architecture
+  3  Scope                            16 Real-Time Architecture
+  4  Roles                            17 Frontend Development Phases (F1-F37)
+  5  Overall Architecture             18 Backend Development Phases (B1-B38)
+  6  Technology Stack                 19 API Contract
+  7  Core Workflow                    20 WebSocket Contract
+  8  Communication State Machine      21 Frontend/Backend Integration Matrix
+  9  Frontend Architecture            22 Security Checklist
+ 10  Backend Architecture             23 Testing Strategy
+ 11  Database Architecture            24 Final Demo Scenarios
+ 12  AI Architecture                  25 Global Definition of Done
+ 13  QKD Architecture                 26 Final Completion Checklist
+ 16  Real-Time Architecture
+================================================================================
+================================================================================
+SECTION 01 - PROJECT OVERVIEW
+================================================================================
+Quantum Secure Communication Platform (QSC) is a software-only simulation of
+how Quantum Key Distribution (QKD), AI-driven protocol selection, standard
+cryptographic encryption and eavesdropping detection combine to provide
+secure user-to-user messaging. No physical quantum hardware is involved.
+
+The simulation delivers:
+- Secure registration + login with role-based access and unique QSC IDs.
+- Sender-to-receiver secure messaging governed by a backend state machine.
+- AI protocol recommendation engine that dynamically selects the QKD
+  protocol to execute (recommendation == execution invariant).
+- BB84 QKD simulation engine: ephemeral qubits, random bits, basis sets,
+  measurement, basis comparison, sifting, error counting, QBER.
+- Configurable security threshold; the Security Engine alone decides key
+  acceptance/rejection and message blocking.
+- Standard-library encryption AFTER key acceptance; never before.
+- Eve (ATTACKER) intercept-and-resend attack simulation that actually
+  modifies the QKD run internals so QBER rises and detection fires.
+- Persistent storage: users, messages, communication sessions, QKD sessions,
+  attacks, security reports, audit logs plus recommended supporting tables.
+- Real-time WebSocket events for communication and attack state changes.
+- Admin monitoring, protocol analytics, audit logs, per-role history.
+
+Both agents follow Sections 17-18 phase plans and MUST build against the
+shared contracts in Sections 4-16 and 19-21 so the two tracks integrate.
+
+KEY DEFINITIONS (shared vocabulary - use exact strings everywhere)
+- QSC ID      : unique public user id, format QSC-[A-Z0-9]{10}, generated
+                and enforced by backend only, unique-constrained in DB.
+- COMMUNICATION: one sender->receiver message attempt + lifecycle; stored in
+                communication_sessions.
+- QBER         : quantum bit error rate = differing_bits / compared_bits,
+                computed from ACTUAL stored QKD run results (never static).
+- THRESHOLD    : configurable simulation security threshold, default 0.11;
+                stored per protocol. Never represented as a universal
+                real-world QKD limit; UI must label it "simulation threshold".
+- KEY STATUS   : PENDING | ACCEPTED | REJECTED.
+- MESSAGE STATUS: PENDING | VERIFIED | PROCESSING | ENCRYPTED | DELIVERED |
+                READ | REJECTED | BLOCKED | FAILED (mapping in Section 08).
+- ATTACK TYPE  : INTERCEPT_AND_RESEND (only one in v1).
+- EVENT        : {type, communication_id, state, actor_role, payload,
+                timestamp} - identical shape on WS and diagnostics.
+
+================================================================================
+SECTION 02 - PROJECT OBJECTIVES
+================================================================================
+Each objective is testable and maps to the phases shown:
+
+O1  Software QKD simulation with ephemeral qubits............ B14 / F12
+O2  BB84 protocol lifecycle implemented and validated...... B14,B15/F12
+O3  QBER computed from actual simulation run data.......... B14,B16/F13
+O4  Eavesdropping detection via QBER/security engine....... B17,B24/F13
+O5  Dynamic AI recommendation (scores, confidence, reason). B20 / F11
+O6  Invariant: recommended protocol == executed protocol.... B20,B13
+O7  Shared QKD secret key bound only after acceptance....... B18 / F14
+O8  Encryption only after security validation passes....... B19 / F14
+O9  Message blocking when security check fails............. B17,B25/F15
+O10 Role-based interfaces with backend enforcement......... B7,B30/F4
+O11 Real-time visualization of communication and attack
+    states ............................................... B33 / F10,F23
+O12 Persistent history: messages, attacks, security, audit. B26-B29/B32
+O13 Eve attacks alter simulation results (QBER changes).... B22,B23
+O14 Delivery only for accepted/encrypted path......... B17,B19,B25,B26
+
+================================================================================
+SECTION 03 - SCOPE
+================================================================================
+IN SCOPE: all functionality described in Sections 01-02 and detailed in
+Sections 04-16, including user/system dashboards, QKD engine, AI recommender,
+Eve simulation, security engine, reports, history, admin monitoring, realtime
+events, persistence, tests and security controls.
+
+OUT OF SCOPE (never add): Blockchain; physical quantum hardware; voice calls;
+video calls; social media; chat features; attacks beyond
+INTERCEPT_AND_RESEND; unnecessary AI models; microservices; cloud
+infrastructure.
+
+SIMULATION HONESTY: "Quantum" operations are classical Monte-Carlo
+simulations of measurement statistics. All UI and API text must describe
+operations as simulated, e.g., "simulated intercept-and-resend on the
+idealized channel". The platform must never claim physical interception.
+IN-SCOPE EXCEPTION: only BB84 is mandated as runnable in v1; other protocols
+exist as registered-but-unsupported stubs (B21).
+================================================================================
+================================================================================
+SECTION 04 - ROLES
+================================================================================
+Three roles enforced by backend JWT claims AND by frontend route guards.
+The frontend hides UI but never trusts it; the backend rejects cross-role
+access with HTTP 403 + error code ROLE_FORBIDDEN.
+
+4.1 USER (role "USER")
+- Can: register; login; obtain unique QSC ID; search users by QSC ID; create
+  a secure message to a registered user; view own communication status,
+  inbox, sent messages, communication history, security reports, profile.
+- Cannot: access other users' messages/keys/threat data; view QBER or security
+  decisions of sessions they do not own; act as attacker.
+
+4.2 ATTACKER / EVE (role "ATTACKER")
+- Can: login with attacker credential (created by admin); view ELIGIBLE ACTIVE
+  communication sessions (metadata only: communication_id, sender name,
+  receiver name, protocol, state, timestamps); choose a target; choose attack
+  type + strength; launch the attack simulation; view attack progress/result;
+  view own attack history.
+- Cannot: read message plaintext or ciphertext; read user passwords; access
+  secret keys; modify the database directly; change protocol configuration;
+  access other users' private data; decrypt/read the receiver's message.
+- Enforcement: every EVE-scoped endpoint builds responses WITHOUT sensitive
+  fields by construction (use dedicated response models, never reuse full
+  message/session schemas).
+
+4.3 ADMIN (role "ADMIN")
+- Can: list/manage users; create/manage attacker accounts; view communication
+  statistics, security events, attack activity, protocol statistics, audit
+  logs; monitor platform activity.
+- Cannot: view decrypted message content (no role can; no endpoint returns
+  plaintext to anyone); alter simulation facts; only configure global
+  settings (threshold, protocol config) through dedicated admin endpoints.
+
+RESPONSE MODEL RULE: a shared "visibility matrix" in the backend maps each
+resource (user, message, session, qkd, attack, report, audit) to what each
+role may see. Route handlers apply it before serialization. Frontend also
+implements guards (F4) but the matrix is the source of truth.
+
+================================================================================
+SECTION 05 - OVERALL ARCHITECTURE
+================================================================================
+Single-page React application (Track A) talks only to the FastAPI backend
+(Track B): REST under /api/v1/* and WebSocket under /ws/*. All rules live
+in backend services; SQLAlchemy ORM persists to PostgreSQL (prod) or SQLite
+(dev/test, selected by DATABASE_URL). WebSocket events are emitted only by
+backend services to the appropriate audiences.
+
+LAYERS
+- Frontend (Track A): public zone, USER zone, ATTACKER zone, ADMIN zone;
+  Axios client; TanStack Query caches; Zustand store; wsClient wrapper;
+  route guards; per-role layouts.
+- API (Track B): FastAPI routers (auth, users, messages, communications,
+  qkd, security, attacks, reports, analytics, admin, audit, ws). Middleware:
+  JWT auth, role enforcement, CORS, rate limiting, request-id, error handler.
+- SERVICES (Track B): Authentication, User, Messaging, CommunicationSession,
+  StateMachine, QKDEngine, AIRecommendation, AttackSimulation, SecurityEngine,
+  Encryption, Inbox/Delivery, Reporting, Admin, Audit, Realtime, Config.
+- PERSISTENCE: tables in Section 11 via SQLAlchemy repositories.
+  (A per-service repository pattern keeps services testable.)
+
+DATA FLOW PICTURE (one message)
+  UI(compose) -> POST /messages -> MessagingService ->
+  SessionService (CREATED) + StateMachine -> AIRecommender (PROTOCOL_SELECTED)
+  -> QKDEngine runs recommended protocol -> QBER computed ->
+  SecurityEngine decides -> Encryption OR Blocking -> Inbox/Delivery ->
+  ReportService + AuditService -> RealtimeService broadcasts -> WS -> UI.
+
+FAILURE CONTRACT: any service exception becomes a typed API error envelope
+{code,message,details} via a single global exception handler; the frontend
+maps codes to UI states (see Section 19 error table).
+================================================================================
+================================================================================
+SECTION 06 - TECHNOLOGY STACK
+================================================================================
+FRONTEND (Track A)
+- React 18 + Vite SPA; TypeScript recommended (default for all phases).
+- Tailwind CSS for layout/styling; CSS variables for the design tokens.
+- React Router v6+ for routing with auth/role guards.
+- Axios for REST; interceptors add Bearer token and refresh on 401.
+- TanStack Query v5 (React Query) for server-state cache + mutations.
+- Zustand for client-side state (auth session, live badge state); store
+  shape must be documented in the repo /docs/frontend-state.md.
+- Recharts for QBER charts, protocol score bars, attack and admin charts.
+- Native WebSocket + a thin wsClient wrapper (auto-reconnect, event routing).
+- Vitest + React Testing Library + Mock Service Worker (MSW) for isolated
+  component/integration tests without a live backend.
+
+BACKEND (Track B)
+- Python 3.11+, FastAPI + Uvicorn (ASGI).
+- SQLAlchemy 2.x ORM + Alembic migrations.
+- Database: PostgreSQL (production) or SQLite (dev/test) - selected via
+  DATABASE_URL environment variable. Repository layer isolates the DB.
+- Pydantic v2 schemas for request/response validation and OpenAPI docs.
+- PyJWT for signed access tokens (HS256) and refresh tokens.
+- bcrypt (via passlib or direct 'bcrypt' package) for password hashing.
+- 'cryptography' package for AES-GCM authenticate-encryption; QKD sifted key
+  is fed through HKDF to derive a 32-byte key - no custom algorithms.
+- FastAPI native WebSockets under /ws/* with JWT verification on connect.
+- Simple in-process rate limiter (e.g., slowapi) per user/IP; interface
+  isolated so production Redis limiter can be plugged without API changes
+  [REC][TBD].
+- pytest + pytest-asyncio + httpx.AsyncClient + pytest-cov.
+
+SHARED CONVENTIONS (both tracks, binding)
+- Base path  : /api/v1 ; data JSON; response fields snake_case.
+- Auth header: Authorization: Bearer <access_jwt>.
+- Error shape: {"code": "PASCAL_SNAKE", "message": "...", "details": {...}}
+- IDs        : integer PKs on the wire; QSC ID is the only public string id.
+- Pagination : ?page=1&limit=20 -> {items, total, page, limit}.
+- Timestamps : UTC ISO-8601 (e.g., 2026-08-22T10:15:00Z).
+- OpenAPI is generated and exported to docs/openapi.json for Track A's
+  codegen of typed clients (contract-first: Track A may generate types).
+
+================================================================================
+SECTION 07 - CORE WORKFLOW (END TO END, NORMAL PATH)
+================================================================================
+Implemented by backend orchestration (B12-B26) and mirrored by the frontend
+wizard (F8-F18). Steps and their state transitions (Section 08):
+
+STEP 1  USER registers -> POST /auth/register -> unique QSC ID assigned.
+STEP 2  USER logs in -> POST /auth/login -> access JWT + profile.
+STEP 3  SENDER searches -> GET /users/search?qsc_id= -> receiver verified;
+        state CREATED -> RECEIVER_VERIFIED (or 404 USER_NOT_FOUND).
+STEP 4  SENDER composes -> POST /messages {receiver_qsc_id, content}.
+STEP 5  Backend creates MESSAGE + COMMUNICATION_SESSION (state CREATED);
+        validates receiver exists and != sender (409 SELF_DELIVERY).
+STEP 6  AI: AIRecommendationService evaluates features (Sec 12); stores
+        ai_recommendations row; session.protocol set to recommended protocol;
+        state AI_ANALYZING -> PROTOCOL_SELECTED.
+STEP 7  QKD: QKDEngine executes EXACTLY the recommended protocol (invariant).
+        state QKD_INITIALIZING -> QKD_RUNNING (leases qkd.progress) ->
+        KEY_SIFTING -> QBER_EVALUATION (QBER from run results, Sec 13).
+STEP 8  Security: SECURITY_CHECK -> if qber<=threshold KEY_ACCEPTED
+        (key persisted encrypted at rest), else ATTACK_DETECTED.
+STEP 9  ENCRYPTING: EncryptionService AES-GCM with HKDF(key); plaintext is
+        NEVER stored; only ciphertext + nonce + tag.
+STEP 10 ENCRYPTED -> DELIVERED: message appears in receiver inbox.
+STEP 11 Receiver opens -> message.decrypted on-the-fly (key stays server-side)
+        -> READ. A security_report row is written (both paths) and events
+        emitted (message.encrypted|delivered|read + security.*).
+
+ATTACK PATH (parallel, Sec 14):
+EV1 EVE logs in -> GET /communications/active (eligible states below).
+EV2 EVE selects target; POST /communications/{id}/attacks with
+    {attack_type: INTERCEPT_AND_RESEND, attack_strength: p}.
+EV3 AttackSimulation reruns/annotates the target QKD run: it intercepts
+    round(p * qubits) simulated qubits, measures each in a random basis,
+    resends the measured result; the stored run data is updated so the error
+    counters change, QBER is recomputed, and SecurityEngine re-evaluates.
+EV4 If recomputed QBER > threshold: attack.detected, KEY_REJECTED, message
+    BLOCKED (never in inbox as delivered), attack row + audit + report.
+EV5 If still <= threshold: attack not detected; session resumes.
+
+ATTACK WINDOW: sessions eligible when state in {QKD_INITIALIZING,
+QKD_RUNNING, KEY_SIFTING, QBER_EVALUATION, SECURITY_CHECK}. Once KEY_ACCEPTED,
+attacks return 409 ATTACK_WINDOW_CLOSED.
+
+NORMAL-PATH DELIVERIES ARE THE ONLY WAY MESSAGES APPEAR IN AN INBOX.
+BLOCKED messages never appear as delivered to the receiver.
+================================================================================
+================================================================================
+SECTION 08 - COMMUNICATION STATE MACHINE
+================================================================================
+Backend-owned state machine. communication_sessions.session_status is set
+ONLY by the StateMachineService, which holds a validated transition table;
+any illegal transition returns HTTP 409 with code INVALID_STATE_TRANSITION.
+
+STATES (fixed vocabulary; frontend renders EXACTLY these strings)
+  CREATED, RECEIVER_VERIFIED, AI_ANALYZING, PROTOCOL_SELECTED,
+  QKD_INITIALIZING, QKD_RUNNING, KEY_SIFTING, QBER_EVALUATION,
+  SECURITY_CHECK, KEY_ACCEPTED, ENCRYPTING, ENCRYPTED, DELIVERED, READ,
+  ATTACK_DETECTED, KEY_REJECTED, BLOCKED.
+  [REC extra state] FAILED (terminal, internal-error path).
+
+LEGAL TRANSITIONS (tests assert each; everything else rejected)
+  CREATED -> RECEIVER_VERIFIED
+  RECEIVER_VERIFIED -> AI_ANALYZING
+  AI_ANALYZING -> PROTOCOL_SELECTED
+  PROTOCOL_SELECTED -> QKD_INITIALIZING
+  QKD_INITIALIZING -> QKD_RUNNING
+  QKD_RUNNING -> QKD_RUNNING              (progress steps; same state)
+  QKD_RUNNING -> KEY_SIFTING
+  KEY_SIFTING -> QBER_EVALUATION
+  QBER_EVALUATION -> SECURITY_CHECK
+  SECURITY_CHECK -> KEY_ACCEPTED | ATTACK_DETECTED
+  KEY_ACCEPTED -> ENCRYPTING
+  ENCRYPTING -> ENCRYPTED
+  ENCRYPTED -> DELIVERED
+  DELIVERED -> READ
+  ATTACK_DETECTED -> KEY_REJECTED
+  KEY_REJECTED -> BLOCKED
+  QKD_INITIALIZING..SECURITY_CHECK -> ATTACK_DETECTED (attack path)
+  Any pre-KEY_ACCEPTED state -> FAILED (terminal).
+  Terminal states: READ, BLOCKED, FAILED (no outgoing edges).
+
+GUARDS enforced by StateMachineService:
+- Sequence guard: follow the table; no skipping.
+- Ownership guard: only owning user services may advance their session;
+  EVE never transitions states directly (AttackSimulationService asks the
+  StateMachineService to move the session when the attack outcome is known).
+- Attack-window guard: attack re-evaluation only while state in
+  {QKD_INITIALIZING, QKD_RUNNING, KEY_SIFTING, QBER_EVALUATION,
+  SECURITY_CHECK}; re-attack loop capped at MAX_REATTACKS=3 [REC].
+- Atomicity: transition + row update + WS event + audit row happen in ONE
+  DB transaction; audit records every transition (B32).
+
+DERIVED STATUS MAPPING (used by all API responses; UI renders these)
+  session_status        message.status  key_status
+  CREATED               PENDING         PENDING
+  RECEIVER_VERIFIED     VERIFIED        PENDING
+  AI_ANALYZING/PROT_SEL PROCESSING      PENDING
+  QKD_INIT..SECURITY    PROCESSING      PENDING
+  KEY_ACCEPTED          PROCESSING      ACCEPTED
+  ENCRYPTING/ENCRYPTED  ENCRYPTED       ACCEPTED
+  DELIVERED             DELIVERED       ACCEPTED
+  READ                  READ            ACCEPTED
+  ATTACK_DETECTED       REJECTED        REJECTED
+  KEY_REJECTED/BLOCKED  BLOCKED         REJECTED
+  FAILED                FAILED          PENDING
+
+message.attack_detected=true whenever the path ends BLOCKED; stored on the
+message row and reflected in reports.
+
+WS NOTE: every transition emits event communication.state_changed with
+payload {state, previous_state} so the UI timeline can animate (F10).
+================================================================================
+================================================================================
+SECTION 09 - FRONTEND ARCHITECTURE (Track A)
+================================================================================
+Routing skeleton (React Router). Guards: <RequireAuth roles={[...]}/> wraps
+each zone's layout; redirect to /login (unauthenticated) or /forbidden.
+
+PUBLIC routes     /  /login  /register  /about-qkd
+USER routes       /dashboard  /messages/compose  /messages/:id
+                  /communications/:communicationId  /inbox  /sent
+                  /history  /security-reports  /profile
+ATTACKER routes   /eve/dashboard  /eve/active-sessions
+                  /eve/attack/configure/:communicationId
+                  /eve/attack/run/:communicationId (live result)
+                  /eve/attack/history
+ADMIN routes      /admin/dashboard  /admin/users  /admin/attackers
+                  /admin/security  /admin/protocols  /admin/audit
+
+LAYERS (folders under src/)
+- core/          : apiClient (Axios interceptors), wsClient (WebSocket
+                   reconnect + event bus), auth store, session store,
+                   constants (state/status/protocol/error vocab), errors
+                   mapping table, config (API_BASE from env).
+- features/      : one folder per area: auth, dashboard, messaging,
+                   communications, eve, admin, reports, profile.
+- components/ui  : primitives: Button, Card, Badge, StatusPill, Table,
+                   StateStepper, Timeline, QberGauge, ScoreBars, AttackLog,
+                   EmptyState, Loader, ErrorPanel, Toast, ConfirmDialog.
+- queries/       : TanStack hooks per API contract (useAuth, useUsers,
+                   useMessage, useCommunication, useRecommendation, useQkd,
+                   useAttacks, useAdmin*...). Each hook sets queryKey and
+                   invalidation rules matching WS events.
+- ws/events.ts   : WS event type -> handler binding table (single source).
+
+STATE MANAGEMENT
+- Server state: TanStack Query (no polling for live pages; invalidation from
+  WS events). Mutations use optimistic=false; refetch on success.
+- Client state: Zustand store for {user, accessToken, refreshToken,
+  isGuest, wsConnected}; persisted to localStorage (tokens only; user
+  refetch per reload).
+- Component state: local; wizard state lifted into feature store.
+- Communication timeline state: from server events (never invented).
+
+SECURITY IN THE UI
+- No security decision made in the browser; QBER/threshold/key status are
+  all rendered from API/WS values.
+- Sensitive data (decrypted message) displayed only from a user-scoped
+  endpoint response; not stored in global state.
+- All variant strings (role, status, protocol) come from shared constants and
+  API; unknown values render a neutral "unmapped" badge, never crash.
+================================================================================
+SECTION 10 - BACKEND ARCHITECTURE (Track B)
+================================================================================
+Project layout (agent2/):
+  app/main.py         FastAPI app; middleware; router registration.
+  app/core/           config.py (pydantic-settings), security.py (jwt, bcrypt,
+                      master key), exceptions.py, logging.py, ratelimit.py,
+                      dependencies.py (get_current_user, require_roles).
+  app/api/routers     auth.py, users.py, messages.py, communications.py,
+                      qkd.py, security.py, attacks.py, reports.py,
+                      analytics.py, admin.py, audit.py, ws.py.
+  app/models/         SQLAlchemy models (Section 11).
+  app/schemas/        Pydantic request and response schemas (Section 19).
+  app/services/       Auth, User, Message, Session, StateMachine, QKD,
+                      AIRecommendation, Attack, SecurityEngine, Encryption,
+                      Inbox, Delivery, Reporting, Admin, Audit, Realtime,
+                      Config.
+  app/repositories    DB access layer (ORM not used outside it).
+  app/protocols/      protocol base + registry + bb84.py.
+  app/simulation/     RNG wrappers, channel model, qubit state helpers.
+  app/ws/             connection manager + event dispatcher.
+  tests/              unit, integration, api, e2e (Section 23).
+  alembic/            env.py + versions/.
+
+
+DISCIPLINE
+- Routers are thin: resolve user -> call service -> serialize. No business
+  logic in handlers.
+- Services get repos + other services via constructor injection (fastapi
+  Depends). 
+- RealtimeService is an event sink; services call realtime.emit() AFTER
+  commit in the same transaction context.
+- ConfigService holds protocol_registry, threshold and feature weights;
+  any change is audit-logged (admin config endpoints only).
+- OpenAPI exported to docs/openapi.json; Track A generates typed clients
+  from it (contract-first).
+================================================================================
+================================================================================
+SECTION 11 - DATABASE ARCHITECTURE
+================================================================================
+ORM: SQLAlchemy 2.x declarative models in app/models/. snake_case names.
+Integer auto-increment primary keys. Timestamps UTC (TIMESTAMP WITH TIME ZONE).
+All [REQ] tables below MUST exist. [REC] tables are recommended additions and
+MUST carry a "RECOMMENDED ADDITION" comment in the model file as well.
+
+REQUIRED TABLES (exact columns and meaning)
+
+users [REQ]
+  id int PK
+  unique_user_id str unique not null   -- QSC ID "QSC-[A-Z0-9]{10}"
+  name str not null
+  email str unique not null            -- case-insensitive uniqueness enforced
+  password_hash str not null           -- bcrypt
+  role str not null                    -- USER | ATTACKER | ADMIN
+  is_active bool default true [REC]
+  created_at datetime not null
+
+messages [REQ]
+  id int PK
+  sender_id int FK users.id not null
+  receiver_id int FK users.id not null
+  communication_id int FK communication_sessions.id [REC]
+  encrypted_message text null          -- AES-GCM ciphertext (base64)
+  nonce str null                       -- 12-byte nonce base64 [REC]
+  protocol str null                       -- protocol actually executed
+  status str not null                   -- mapping in Section 08
+  qber float null
+  key_status str null                    -- PENDING|ACCEPTED|REJECTED
+  attack_detected bool default false
+  created_at datetime not null
+  read_at datetime null
+
+communication_sessions [REQ]
+  id int PK
+  sender_id int FK users.id not null
+  receiver_id int FK users.id not null
+  protocol str null                      -- recommended == executed protocol
+  session_status str not null default CREATED   -- state machine value
+  created_at datetime not null
+  completed_at datetime null
+
+qkd_sessions [REQ]
+  id int PK
+  communication_id int FK communication_sessions.id not null
+  protocol str not null
+  qubits_generated int not null
+  matching_bases int not null
+  sifted_bits int not null
+  compared_bits int not null  [REC - denominator for QBER]
+  errors int not null
+  qber float not null
+  threshold float not null               -- threshold used for THIS run
+  key_status str not null                -- PENDING|ACCEPTED|REJECTED
+  is_baseline bool default true          -- true=pre-attack, false=post-attack
+  created_at datetime not null
+
+attacks [REQ]
+  id int PK
+  attacker_id int FK users.id not null
+  communication_id int FK communication_sessions.id not null
+  attack_type str not null               -- INTERCEPT_AND_RESEND
+  attack_strength float not null         -- p in [0.1, 1.0]
+  states_intercepted int not null
+  states_modified int not null
+  qber_before float not null
+  qber_after float not null
+  detection_status str not null           -- DETECTED|NOT_DETECTED
+  created_at datetime not null
+
+security_reports [REQ]
+  id int PK
+  message_id int FK messages.id not null
+  protocol str not null
+  qber float not null
+  attack_detected bool not null
+  key_status str not null
+  encryption_status str not null         -- ENCRYPTED|NOT_ENCRYPTED|SKIPPED
+  delivery_status str not null           -- DELIVERED|BLOCKED|PENDING
+  created_at datetime not null
+
+audit_logs [REQ]
+  id int PK
+  user_id int FK users.id null           -- null for anonymous events
+  action str not null                    -- register, login, message.create, ...
+  description str not null
+  created_at datetime not null
+
+RECOMMENDED ADDITIONAL TABLES [REC]
+
+ai_recommendations [REC] stores the recommendation and full input snapshot so
+  recommendation == executed protocol is provable and auditable:
+  id, communication_id FK, protocol, confidence float, explanation text,
+  features jsonb (feature name -> value), protocol_scores jsonb,
+  created_at. One latest row per communication.
+
+secret_keys [REC]
+  id, communication_id FK, qkd_session_id FK, key_status,
+  key_enc -- AES-GCM of the derived 32-byte key under server QSC_MASTER_KEY,
+  created_at. NEVER serialized to any API. Rejected path: no row persists.
+
+protocol_configs [REC]
+  id, protocol str unique, enabled bool, default_threshold numeric,
+  max_qubits int, parameters jsonb. Config change requires ADMIN role;
+  Eve must be denied at dependency level (B30/B35).
+
+refresh_tokens [REC]
+  id, user_id FK, token_hash str, expires_at datetime. JWT refresh rotation.
+
+Relationships: users 1..n messages; 1..n communication_sessions; each session
+has 0..1 qkd_sessions baseline + n post-attack runs; 1..n attacks; each
+message 1..1 security_report; users 1..n audit_logs. DELETE is restricted for
+history-bearing tables; use is_active=false instead (soft disable).
+================================================================================
+================================================================================
+SECTION 12 - AI ARCHITECTURE (PROTOCOL RECOMMENDATION)
+================================================================================
+Purpose: dynamically evaluate communication conditions and choose which QKD
+protocol executes. MUST be a real scoring engine, never hard-coded. v1 has
+only BB84 enabled, but the engine still computes a full feature vector,
+per-protocol scores, confidence and explanation from live inputs so the
+"recommendation" is genuinely dynamic and future protocols slot in.
+
+INPUT FEATURES (evaluated per message from real state):
+  F1 channel_noise            float 0..1  -- simulated noise level from
+                             ConfigService or per-session setting
+  F2 security_requirement     LOW|MEDIUM|HIGH -- chosen at message creation
+  F3 estimated_attack_risk    0..1 -- computed from recent detected attacks
+                             (count_last_24h * decaying weight)
+  F4 distance                 km (simulated route distance setting)
+  F5 key_efficiency           expected sifted key rate of each protocol
+  F6 protocol characteristics table (per protocol: noise_resistance,
+                             rate, distance_suitability, maturity)
+  F7 time_sensitivity         optional message flag default MEDIUM [TBD]
+Feature values stored in ai_recommendations.features jsonb for audit.
+
+SCORING MODEL [REC]
+  score(P) = SUM over features w_i * normalized_value(P, F_i)
+  Weights w_i live in protocol_configs.parameters.jsonb and are ADMIN
+  editable (audited). Defaults:
+     channel_noise          0.25
+     security_requirement   0.25
+     attack_risk            0.20
+     distance               0.10
+     key_efficiency         0.10
+     maturity/reliability   0.10
+  Per-protocol capability matrix (BB84 baseline; others stubs):
+     BB84 : noise 0.11 | eff 0.9 | dist up to 100 | maturity 1.0
+     B92  : [TBD] enrol later via registry
+     E91  : requires entangled phase -- [REC] flag not_supported v1
+  Confidence = softmax(top2 scores) or margin (top - runnerup)/top; MUST be
+  computed, never hard-coded. Explanation = templated but driven by feature
+  contributions (e.g., "BB84 chosen: highest maturity, meets target risk").
+OUTPUT CONTRACT (stored in ai_recommendations + returned by
+GET /communications/{id}/recommendation):
+  {protocol: "BB84", confidence: 0.86, explanation: "...",
+   scores: {"BB84":0.86,...}, features: {...}, evaluated_at: ts}
+
+CRITICAL INVARIANT (R8 = Objective O6):
+  The protocol string persisted to communication_sessions.protocol is the
+  SAME string stored in ai_recommendations.protocol; QKDEngine receives
+  session.protocol as its single input; any mismatch raises RuntimeError
+  MISMATCH_RECOMMENDED_EXECUTED and fails the communication with FAILED
+  (audited). Unit test asserts this invariant.
+Frontend: F11 only RENDERS recommendation payload; never computes it.
+
+================================================================================
+SECTION 13 - QKD ARCHITECTURE
+================================================================================
+13.1 PROTOCOL REGISTRY [REQ]
+  ProtocolBase (abstract): name, requires_entanglement flag, generate_qubits(),
+  sift(), compute_qber(), estimate_key_efficiency().
+  Registry `protocol_registry.register(Base)`; names: BB84, B92, E91,
+  SIX_STATE, SARG04, DECOY_BB84. Only BB84 implements full run; others
+  register but mark supported=False and return 501 when invoked. Adding a
+  new protocol = add ONE module + register line (no core edits) (B21).
+
+13.2 BB84 SIMULATION (B14) - deterministic-per-seed, default 256 qubits
+  Steps:
+   1. Alice random bits          a_bits[n] via secrets/SecureRNG
+   2. Alice bases                a_bases[n] in {R(rectilinear/ Z), D(diag/ X)}
+   3. Encode states classically  (bit,basis)->base state label; store sim
+      eigenvector table
+   4. Channel noise contribution: flip each transmitted bit w.p. channel_noise
+      (default channel_noise=0.01) - configurable [REQ]
+   5. Bob bases                  b_bases[n] random
+   6. Bob measurement: if basis matches and no noise -> same bit; else
+      probabilistic per measurement matrix (standard BB84 outcome rule)
+   7. Basis comparison: keep indices where basis equal -> matching_bases count
+   8. Sifting: matched bits -> sifted_bits bitstring; Bob's sifted also kept
+   9. Error test: for random sample "compared_bits" (e.g. all sifted bits when
+      small; or a sample subset) count differing -> errors
+  10. QBER = errors / compared_bits; store ALL counters in qkd_sessions
+  11. Key validation: QBER <= threshold (default 0.11) -> ACCEPTED else
+      REJECTED; both values stored
+  12. key_status saved onto session and message
+  All randomness uses injected RNG for reproducible tests (seedable).
+
+13.3 QBER (B16)
+  QBER = errors / compared_bits. Both baseline (session-owned) and post-attack
+  runs stored (is_baseline flag) so before/after compare works for Eve UI.
+  IMPORTANT: threshold is SIMULATION threshold (default 0.11), explicitly
+  labeled in API + UI as simulation threshold, never as universal physics.
+
+13.4 KEY HANDLING (B18/B19)
+  - Accepted key: 32-byte HKDF(sifted_bits || communication_id). Stored
+    encrypted (secret_keys.row, AES-GCM w/ QSC_MASTER_KEY env). Both sides
+    are the server in the simulation, so one record represents "shared".
+  - Encryption: AES-GCM via `cryptography`; random 12-byte nonce; tag
+    appended; stored base64 in messages.encrypted_message + messages.nonce.
+  - Decryption only in EncryptionService on GET message detail for the
+    receiver (or sender); key decrypted in-process, never leaves memory or
+    API.
+  - Rejected path never creates secret_keys row; encrypted_message remains
+    null; message stays BLOCKED.
+===============================================================================
+================================================================================
+SECTION 14 - EVE ATTACK ARCHITECTURE
+================================================================================
+AttackSimulationService is the ONLY component allowed to run attacks. It is
+purely simulated; every mutation is applied to stored simulation data so
+QBER genuinely changes. All UI/API copy must use "simulated" language.
+
+14.1 PARAMETERS
+  target: communication id; attacker: authenticated role ATTACKER.
+  Attack window states {QKD_INITIALIZING, QKD_RUNNING, KEY_SIFTING,
+  QBER_EVALUATION, SECURITY_CHECK}; outside -> 409 ATTACK_WINDOW_CLOSED.
+  attack_strength p in [0.1, 1.0] (fraction of transmitted qubits
+  intercepted). attack_type must equal INTERCEPT_AND_RESEND (v1).
+
+14.2 SIMULATED INTERCEPT-AND-RESEND ALGORITHM
+  Input: the session's baseline qkd_sessions row (is_baseline=true). The
+  QKDEngine persists counters plus the RNG seed for each run, so the engine
+  can deterministically RERUN the run with Eve injected for attacks (seed =
+  deterministic function of communication_id + run counter). This keeps
+  results reproducible and QBER genuinely recomputed from rerun counters.
+  Steps:
+   1. n_intercepted = round(p * n_qubits)
+   2. For each intercepted index i: Eve picks a random basis b_e, measures
+      the simulated transmitted state in b_e -> outcome bit, and resends
+      that outcome (in b_e) onward.
+   3. Bob measures possibly-corrupted states using standard BB84
+      measurement rules, producing the classic intercept-resend error
+      signature (expected QBER_after ~ channel_noise + p * 0.25; this
+      formula is a sanity bound only - the stored QBER MUST be computed
+      from actual rerun counters to honor R7).
+   4. Write NEW qkd_sessions row: is_baseline=false, modified counters,
+      recomputed QBER.
+   5. Persist attacks row: attacker_id, communication_id, attack_type,
+      attack_strength p, states_intercepted (round(p*n)), states_modified
+      (exact from rerun), qber_before (baseline), qber_after (new run),
+      detection_status, created_at.
+   6. Hand SecurityEngine the new QBER + active threshold.
+   7. StateMachine transitions: DETECTED -> ATTACK_DETECTED ->
+      KEY_REJECTED -> BLOCKED (message status BLOCKED; never in inbox as
+      delivered). NOT_DETECTED -> session resumes current flow; attack
+      is still recorded in attacks + audit + report.
+  Determinism requirement: B23 unit tests MUST assert that rerunning with
+  same seed yields identical counters.
+
+14.3 EVE VISIBILITY (no leakage)
+  Eve endpoints return only: communication_id, sender_name, receiver_name,
+  protocol, session_status, created_at; after an attack also: attack_id,
+  qber_before, qber_after, detection_status, states_intercepted,
+  states_modified, attack_strength.
+  Eve endpoints MUST NOT return: encrypted_message, nonce, plaintext, key
+  material, threshold, emails, or any other user's QSC ID beyond the sender
+  and receiver public names.
+
+14.4 EVE HISTORY
+  GET /api/v1/attacks/history returns only the authenticated attacker's own
+  attacks, newest first.
+
+================================================================================
+SECTION 15 - SECURITY ARCHITECTURE
+================================================================================
+SecurityEngine is the sole authority for:
+  - evaluating QBER against the active threshold (protocol_configs default,
+    captured per run in qkd_sessions.threshold),
+  - producing the key decision (ACCEPTED | REJECTED),
+  - declaring detection (DETECTED | NOT_DETECTED),
+  - granting or forbidding encryption and delivery.
+
+DECISION MODEL (exact; unit-test these rules):
+  if qber <= threshold:
+     key_status = ACCEPTED; encryption allowed; delivery allowed.
+  else:
+     attack_suspected = true; key_status = REJECTED; encryption NOT
+     allowed; delivery blocked (message status BLOCKED).
+  On the attack path the engine re-evaluates with post-attack QKD results.
+  A downgrade (ACCEPTED -> REJECTED) is allowed only while the session is
+  still inside the attack window; once DELIVERED no downgrade.
+
+ENCRYPTION GATE: EncryptionService must first obtain current
+key_status=ACCEPTED from SecurityEngine; on REJECTED it raises
+KEY_REJECTED and never encrypts. QKD generation and message encryption
+remain separate modules (different files, different services).
+
+DECRYPTION ACCESS:
+  - GET message detail returns plaintext ONLY if requester is the receiver
+    (or the sender viewing own sent message) AND message.status is
+    DELIVERED or READ; key is loaded, deciphered in-process, response
+    carries only plaintext; failures yield safe 403/404.
+
+SAFE ERRORS: user-safe messages from a shared table; codes expose only a
+taxonomy (USER_NOT_FOUND, ROLE_FORBIDDEN, INVALID_STATE_TRANSITION,
+ATTACK_WINDOW_CLOSED, KEY_REJECTED, ...). Details go to server logs only.
+
+================================================================================
+================================================================================
+SECTION 16 - REAL-TIME ARCHITECTURE (WebSocket)
+================================================================================
+FastAPI /ws/* endpoints; JWT verified on connect (token passed via query
+?token=<jwt>). ConnectionManager maps channels to sets of sockets; all
+event publish goes through RealtimeService.emit() so there is one sink.
+
+CHANNELS (identity of the endpoint in WS URLs)
+  /ws/user/events                - USER + ADMIN: events for the signed-in user
+  /ws/communications/{id}       - sender, receiver, admins watching; Eve may
+                                  join the eve variant below, not this
+  /ws/eve/events                - ATTACKER channel: active-session feed
+  /ws/admin/events              - ADMIN channel: platform-wide feed
+Channel routing rules:
+  - A user receives communication.state_changed / qkd.* / security.* /
+    message.* events ONLY for communications where they are sender or
+    receiver (or global admin channel).
+  - Eve receives attack.started, attack.progress, qkd.* (progress rows
+    visible), security events ONLY through the eve channel and never the
+    raw QBER of OTHER sessions not in the eve feed per visibility rules.
+  - Admin channel mirrors everything except decrypted content.
+
+HEARTBEAT / RESILIENCE (MUST HAVE)
+  - Server pings every 30s; clients reconnect with exponential backoff;
+  - UI must show a non-blocking "live" indicator and reuse the last-known
+    REST state when disconnected (halting not acceptable).
+  - On reconnect, clients refetch active resources (safety net) then resume
+    streaming (no missed-event logic beyond that; events are idempotent
+    refresh hints).
+
+EVENT PRIORITIES (full list in Section 20 with MUST HAVE/RECOMMENDED/
+OPTIONAL tags). Every state transition emits communication.state_changed.
+
+CONTRADICTION GUARD: WS events are presentation hints; all persisted state
+must match REST responses. On any mismatch frontend treats REST as truth.
+================================================================================
+SECTION 17 - FRONTEND DEVELOPMENT PHASES (Track A)  F1 - F37
+================================================================================
+Format per phase: OBJ/SCOPE/PAGES/COMP/STATE/API/WS/DATA/ACT/LOAD/EMPTY/
+ERR/OK/SEC/VAL/TEST/DEPS/DONE = Objective, Scope, Pages affected,
+Components required, State management, API dependencies, WebSocket
+dependencies, Dynamic data requirements, User interactions, Loading states,
+Empty states, Error states, Success states, Security considerations,
+Validation requirements, Testing requirements, Dependencies, Definition of
+Done. Unlisted fields for any phase default to: LOAD=standard skeleton,
+EMPTY=n/a, SEC=shared rules (Section 4 visibility matrix + Section 22),
+VAL=TS types + client validation where a form exists, TEST=component-level
+Render/TL tests, DEPS only impactful dependencies listed.
+Conventions: token refresh loop in apiClient (401 -> /auth/refresh -> retry);
+query invalidation keys align with WS event types (see Section 20).
+
+-----------------------------------------------------------------------------
+F1 - FRONTEND FOUNDATION
+OBJECTIVE   : Bootstrap the SPA: tooling, folder layout, shared config.
+SCOPE       : Vite React-TS scaffold; ESLint/Prettier; env vars
+             (VITE_API_BASE_URL); axios instance apiClient with interceptors
+             (Bearer token attach, 401 refresh flow, error mapping);
+             wsClient scaffold (connect, on, emit, reconnect); constants/
+             vocab.ts (states, message statuses, protocols, error codes);
+             types/ generated stub; folder skeleton per Section 09.
+PAGES       : (none yet - app shell)
+COMPONENTS  : AppRoot, core layout placeholders.
+STATE MGMT  : Zustand stores: authStore (tokens/user), uiStore (toasts,
+             connection status); apiClient reads tokens.
+API DEPS    : POST /api/v1/auth/refresh (used by interceptor).
+WS DEPS     : none initial; wsClient wires skeletons.
+DYNAMIC DATA: none yet.
+INTERACTIONS: none yet (scaffold only).
+LOADING     : splash loader while env resolves.
+EMPTY       : n/a.
+ERROR       : global ErrorBoundary + toast helpers.
+SUCCESS     : `npm run dev` serves shell.
+SECURITY    : tokens only in localStorage; apiClient never logs auth headers.
+VALIDATION  : TS strict; lint passes.
+TESTING     : scaffold smoke test (App renders).
+DEPENDS ON  : none.
+DONE WHEN   : app boots; build passes; wsClient/apiClient stubs compile.
+
+-----------------------------------------------------------------------------
+F2 - DESIGN SYSTEM / UI ARCHITECTURE
+OBJECTIVE   : Tailwind theme + design tokens + shared primitive components.
+   SCOPE     : tailwind.config, CSS variables (colors per status, spacing,
+           typography), Button, Card, Badge, StatusPill, Table, Modal,
+           ConfirmDialog, Toast, Loader, EmptyState, ErrorPanel,
+           StateStepper (auto from states list), Timeline, PageHeader.
+PAGES       : global (used everywhere later).
+COMPONENTS  : as SCOPE.
+STATE MGMT  : none beyond vocab mapping tokens.
+API DEPS    : none (pure UI).
+WS DEPS     : none.
+DYNAMIC DATA: state->pill mapping driven by constants.ts (no hard-coded
+             decision).
+INTERACTIONS: accessibility props (aria) on all primitives.
+LOADING     : Loader variants (spinner, skeleton).
+EMPTY       : EmptyState with slot + call-to-action.
+ERROR       : ErrorPanel with retry callback.
+SUCCESS     : Storybook-style catalog page optional [TBD]; at minimum
+             primitives render in a /_kit route.
+SECURITY    : no data.
+VALIDATION  : Tailwind class consistency checklist.
+TESTING     : component render tests for ColorStatusPill etc.
+DEPENDS ON  : F1.
+BLOCKS      : all UI phases.
+DONE WHEN   : primitives + tokens used by at least two features.
+================================================================================
+-----------------------------------------------------------------------------
+F3 - AUTHENTICATION UI
+  OBJ  : Register + Login pages fully wired to backend auth APIs.
+  SCOPE: /register (name, email, password, confirm), /login (email, password),
+         client-side form validation, submit handlers via apiClient, token
+         persistence, role-aware redirect after login, API error mapping
+         (EMAIL_TAKEN, INVALID_CREDENTIALS, USER_DISABLED).
+  PAGES: /register, /login.
+  COMP : AuthLayout, AuthForm, PasswordField, SubmitButton, FormError panel,
+         QscIdSuccessBanner (shown after register with generated QSC ID).
+  STATE: authStore.setSession({user, accessToken, refreshToken}) persisted;
+         logout clears store and redirects to /login.
+  API  : POST /auth/register; POST /auth/login; GET /auth/me (on restore).
+  WS   : connect /ws/user/events after successful login; disconnect logout.
+  DATA : redirect target computed from role in login response.
+  ACT  : register submit, login submit, show/hide password, switch links.
+  LOAD : button spinner + card skeleton during requests.
+  EMPTY: n/a.
+  ERR  : per-field errors + top-level banner; code->message table.
+  OK   : toast "Signed in as <name>"; redirect to role home.
+  SEC  : passwords never stored client-side; tokens only in localStorage;
+         autocomplete="off" on password; no credentials in query strings.
+  VAL  : client-side: email regex, password >= 8 chars, confirm match,
+         trim all inputs; backend is the final authority.
+  TEST : MSW-backed tests: register+login success, each error code, token
+         refresh path, logout.
+  DEPS : F1, F2.
+  DONE : register->auto-login->dashboard and login->dashboard both work;
+         error codes render friendly messages; tests green.
+
+-----------------------------------------------------------------------------
+F4 - ROLE-BASED ROUTING
+  OBJ: Route guards by authentication + role; per-zone layout shells.
+  SCOPE: RequireAuth wrapper enforcing roleAllow lists; redirect maps
+         (guest -> /login; wrong role -> /forbidden); shared sidebar+header
+         shells per zone; session restore on refresh via GET /auth/me;
+         expiry handling (interceptor refresh + forced logout after retry).
+  PAGES: user/attacker/admin zone shells; /forbidden screen.
+  COMP : RequireAuth, ZoneLayout, Sidebar, Header, RoleBadge, UserMenu,
+         SessionExpiredModal.
+  STATE: authStore isGuest + user.role as single source; selector functions
+         for guards.
+  API  : GET /auth/me; POST /auth/refresh (via interceptor).
+  WS   : enter /ws/user/events when authenticated; leave on logout; backoff.
+  DEPS : F3.
+  BLOCKS: F5, F19, F26 (all role dashboards).
+  DONE : zone separation enforced; shells render; guest/role matrix tested.
+
+-----------------------------------------------------------------------------
+F5 - USER DASHBOARD
+  OBJ: Personal dashboard with live, backend-driven statistics.
+  SCOPE: Stat cards (messages sent, received, delivered, blocked, attacks on
+         own sessions, average QBER, active communications), recent
+         communications table, quick actions, blocked/suspicious alerts strip.
+  PAGES: /dashboard.
+  COMP : StatCard, RecentCommunicationsTable, QuickActions, AlertStrip,
+         LiveBadge (WS indicator), DashboardEmpty.
+  STATE: TanStack Query for all dashboard queries; uiStore for toasts.
+  API  : GET /api/v1/dashboard/summary; GET /communications?scope=mine.
+  WS   : invalidate summary on message.*, communication.state_changed,
+         security.*, attack.* (user's sessions only).
+  DEPS : F4.
+  DONE : dashboard values always equal backend summary; WS keeps live.
+
+--------------------------------------------------------------------------------
+F6 - USER PROFILE / QSC ID
+  OBJ: Profile page and QSC ID presentation/copy UX.
+    SCOPE: GET /users/me; QSC ID monospace chip with copy button; profile
+    fields; onboarding banner right after registration; edit display name
+    [TBD]; change password [REC].
+  PAGES: /profile.
+  COMP: ProfileCard, QscIdChip, CopyButton, ChangePasswordForm [REC].
+  STATE: authStore cached minimal user; refetched on /profile mount.
+  API: GET /users/me; PATCH /users/me [TBD]; POST /auth/change-password [REC].
+  WS : none.
+  DEPS: F1, F3.
+  TEST: chip copy; profile render from mocked API; PATCH validation cases.
+  SEC : email only ever displayed to the profile owner; QSC ID is public.
+  DONE: /profile fully backed by API; copy interaction works.
+
+--------------------------------------------------------------------------------
+F7 - RECEIVER SEARCH UI
+  OBJ: Type-ahead QSC-ID search with verified-receiver confirmation.
+  SCOPE: Part of message wizard; search bar with client-side regex
+         ^QSC-[A-Z0-9]{10}$, debounced GET /users/search, result card with
+         receiver identity, selection chip, 404/429 handling.
+  PAGES: /messages/compose (step 1).
+  COMP : QscSearchInput, QscResultCard, SelectedReceiverChip, StepDots.
+  STATE: composeStore {receiver, requestStep}; shared with F8.
+  API  : GET /users/search?qsc_id=<id>.
+  WS   : none.
+  LOAD : inline spinner.
+  EMPTY: "No user with that QSC ID" panel.
+  ERR  : 429 -> cooldown message; 4xxx handled.
+  OK   : chip appears + step advances on selection.
+  SEC  : result shows only name + QSC ID.
+  TESTS: debounce behavior; valid/invalid input; me-flag protection.
+
+===============================================================================
+-----------------------------------------------------------------------------
+F8 - SECURE MESSAGE COMPOSITION
+  OBJ  : Multi-step compose wizard that creates a message and kicks off the
+         secure pipeline (backend orchestrates; UI only observes).
+  SCOPE: Steps: 1) receiver search (F7), 2) message text + security
+         requirement selector (LOW/MEDIUM/HIGH) + optional timestamp label,
+         3) review + submit via POST /messages, 4) redirect to the live
+         communication page. Pre-submit client checks: receiver present,
+         content 1..2000 chars.
+  PAGES: /messages/compose.
+  COMP : ComposeWizard, StepDots, MessageTextArea, SecurityLevelSelect,
+         ReviewCard, SubmitPanel.
+  STATE: composeStore {receiver, body, securityLevel, step}; submit mutation.
+  API  : POST /api/v1/messages (body: {receiver_qsc_id, content,
+         security_requirement}); response {message_id, communication_id}.
+  WS   : none on this page (redirect after submit).
+  DATA : none besides store.
+  ACT  : type message, pick security level, review, submit, cancel.
+  LOAD : submit spinner; button disabled while pending.
+  EMPTY: n/a.
+  ERR  : CONTENT_TOO_LONG, EMPTY_MESSAGE, USER_NOT_FOUND surfaced inline.
+  OK   : redirect to /communications/{communication_id} with toast.
+  SEC  : content is plaintext in memory only; never stored client-side.
+  VAL  : 1..2000 chars; securityLevel enum.
+  TEST : wizard step flow; submit success/per-failure via MSW.
+  DEPS : F7; backend B11/B12.
+  DONE : POST succeeds -> session id in URL; errors handled.
+
+-----------------------------------------------------------------------------
+F9 - COMMUNICATION SESSION UI
+  OBJ: Master status page for one communication: full lifecycle view.
+  SCOPE: Fetch GET /communications/{id}; render StateStepper with the 17
+         states; detail panels for message meta, receiver, timestamps;
+         embed F10 (live) and F11/F12/F13 (recommendation, QKD, security)
+         panels conditionally by state; terminal actions (view report,
+         back to list); block/failed visual treatments.
+  PAGES: /communications/:communicationId.
+  COMP : StatesStepper, CommunicationHeader, MetaTable, PanelsHost.
+  STATE: TanStack query with polling only when WS absent; WS invalidation.
+  API:   GET /communications/{id}.
+  WS:    /ws/user/events (message.*/qkd.*/security.*/communication.*).
+  DATA:  everything from API (state graph derived from constants).
+  ACT:   navigate panels; refresh; copy report link.
+  LOAD:  stepper skeleton while fetching.
+  EMPTY:  n/a.
+  ERR: 404/403 panels.
+  OK:  stepper animates through states live; timeline complete.
+  SEC: detail view is ownership-scoped (sender/receiver only).
+  VAL: n/a client-side.
+  TEST: rendered states for each terminal branch (READ/BLOCKED).
+  DEPS: F8/F10/F11/F12/F13 components.
+  DONE: page reflects backend state 1:1 including attack path.
+
+F10 - REAL-TIME COMMUNICATION STATE UI
+  OBJ: Full-screen visualization of the state machine over time.
+  SCOPE: Timeline component driven by WebSocket event breadcrumb list; step
+         coloring per state group (preparation / QKD / security / secure /
+         attack); current state highlight; QBER marker at the point it was
+         computed; "live" pulsing indicator; replay of events on mount from
+         REST GET /communications/{id} (current state) + history.
+  PAGES: /communications/:communicationId (embedded panel) and optional
+         full-screen route.
+  COMP: StateTimeline, EventBreadcrumb, LiveIndicator, PhaseGroup legend.
+  STATE: local timeline store; entries appended on the fly; bounded to 500.
+  API: GET /communications/{id} (initial state + last events if provided).
+  WS: MUST HAVE: communication.state_changed; qkd.started/progress/
+         completed; qber.calculated; security.key_accepted/rejected;
+         attack.started/detected; message.delivered/blocked.
+  DATA: timeline purely from WS + initial REST.
+  ACT: pause/resume streaming; jump-to-current.
+  LOAD: skeleton timeline.
+  EMPTY: timeline placeholder "awaiting first event".
+  ERR: WS disconnect banner + backend re-fetch.
+  OK: step-by-step animation with server timestamps.
+  SEC: render only events for own sessions; sanitized.
+  VAL/TEST: timeline order & dedupe unit tests (Vitest).
+  DEPS: F9.
+  BLOCKS: F23 (Eve execution view reuses timeline).
+  DONE: two browsers demo (Alice/Bob) show live identical timeline.
+
+===============================================================================
+-----------------------------------------------------------------------------
+F11 - AI RECOMMENDATION UI
+  OBJ  : Render the AI protocol recommendation panel (dynamic values only).
+  SCOPE: Fetch GET /communications/{id}/recommendation; display chosen
+         protocol, confidence (progress bar), explanation block, protocol
+         score bars (Recharts horizontal bars per protocol), feature
+         breakdown list; refresh on ai.protocol_selected WS event.
+  PAGES: /communications/:id (panel) + dashboard recent communications hint.
+  COMP : RecommendationCard, ConfidenceBar, ProtocolScoresChart,
+         FeatureList, RecommendingSpinner.
+  STATE: TanStack query key ['recommendation', communicationId]; invalidation
+         on 'ai.protocol_selected'.
+  API  : GET /api/v1/communications/{id}/recommendation.
+  WS   : ai.analysis_started -> spinner; ai.protocol_selected -> refetch.
+  DATA : all values (confidence, scores, features) from backend response;
+         NO hard-coded percentages or idealized defaults.
+  ACT  : none beyond viewing (read-only panel).
+  LOAD : animated "analyzing conditions" state.
+  EMPTY: panel hidden if no recommendation exists.
+  ERR  : 404 -> panel absent; 4xx friendly.
+  OK   : panel shows the protocol that will actually run (invariant hint UI).
+  SEC  : feature snapshot might contain aggregate numbers only; no user data
+         leakage; nothing computed client-side.
+  VAL  : none.
+  TEST : render with mock recommendation payload; absence case.
+  DEPS : F9; backend B20.
+  DONE : panel always equals ai_recommendations.protocol in DB; live via WS.
+
+-----------------------------------------------------------------------------
+F12 - QKD VISUALIZATION
+  OBJ: Visualize the BB84 run as it executes (simulation steps).
+  SCOPE: Fetch GET /communications/{id}/qkd (active + baseline rows); render
+         step pipeline (generate bits -> Alice bases -> states -> Bob bases
+         -> measure -> compare -> sift -> errors -> QBER); live progress bar
+         during run (qkd.progress events); qubit table sample (first N rows:
+         index, alice_basis, state, bob_basis, match, kept) rendered from
+         the API's sample arrays; reconciliation step animation.
+  PAGES: /communications/:id (panel).
+  COMP : QkdPipeline, QubitSampleTable, ProgressBar, RunSummary (counters).
+  STATE: TanStack query + WS-driven live updates.
+  API  : GET /communications/{id}/qkd (counter summary + optional sample
+         window of qubit transcript for visualization).
+  WS   : qkd.started / qkd.progress / qkd.completed -> invalidation.
+  DATA : counters: qubits_generated, matching_bases, sifted_bits,
+         compared_bits, errors, qber, threshold, key_status all from API.
+  ACT  : expand/collapse transcript; toggle baseline vs post-attack runs.
+  LOAD : pipeline skeleton.
+  EMPTY: "QKD not started" placeholder.
+  ERR  : fetch error panel (with retry).
+  OK   : pipeline animates during live runs; numbers equal qkd_sessions.
+  SEC  : never shows raw key bits (sifted key gate: API returns the key's
+         metadata only, NEVER the key).
+  VAL  : n/a.
+  TEST : mock run rendering; "sample unavailable" fallback.
+  DEPS : F9; B14/B15 APIs.
+  DONE : BB84 run visible and animating from real run data.
+
+-----------------------------------------------------------------------------
+F13 - QBER / SECURITY VISUALIZATION
+  OBJ  : Security result panel: QBER vs threshold + key decision.
+  SCOPE: QBER gauge (Recharts) with threshold reference line; verdict
+         banner (KEY ACCEPTED green / ATTACK DETECTED red / REJECTED red /
+         pending), key_status pill, compared/errors numbers, threshold callout
+         "simulation threshold (not a physics limit)"; updates on
+         qber.calculated /security.* WS events; also drives the user
+         dashboard's blocked list badges.
+  PAGES: /communications/:id (panel); dashboard.
+  COMP: QberGauge, ThresholdMarker, VerdictBanner, KeyStatusPill, PhaseGate.
+  STATE: TanStack key ['qkd', id] + ['security', id].
+  API: GET /communications/{id}/qkd; GET /communications/{id}/security.
+  WS: qber.calculated; security.check_started/key_accepted/key_rejected.
+  SEC: No client-side computation of QBER; gauge just plots API numbers.
+  VAL: nothing computed in browser.
+
+===============================================================================
+-----------------------------------------------------------------------------
+F14 - ENCRYPTION / TRANSMISSION STATUS
+  OBJ  : Render the encryption + delivery pipeline stage-by-stage.
+  SCOPE: Status strip driven by message.status: PROCESSING -> ENCRYPTED ->
+         DELIVERED -> READ (secure path) or REJECTED -> BLOCKED (attack
+         path); display "encrypted" lock icon + ciphertext length + protocol
+         used; never displays key material or plaintext in transmission view;
+         blocked view shows reason and "not delivered" notice.
+  PAGES: /communications/:id (panel); /messages/:id detail.
+  COMP : TransmissionStrip, EncryptionBadge, BlockedNotice, DeliveryReceipt.
+  STATE: TanStack ['messages', id]; invalidation on message.* WS events.
+  API  : GET /messages/{id} (status, qber, key_status, attack_detected,
+         created_at, read_at) - response NEVER includes key bytes.
+  WS   : message.encrypted, message.delivered, message.blocked, message.read
+         -> update strip live.
+  DATA : progress purely from statuses; no static animation claims.
+  ACT  : toggle "technical details" (non-sensitive counters only).
+  LOAD : progress skeleton.
+  EMPTY: n/a.
+  ERR  : fetch error panel.
+  OK   : strip ends at DELIVERED/READ (green) or BLOCKED (red) with reason.
+  SEC  : UI shows that encryption happened (badge); no key in any payload.
+  VAL  : n/a.
+  TEST : status mapping matrix (every message.status -> correct strip state).
+  DEPS : F9/F13; backend B19/B25/B26.
+
+-----------------------------------------------------------------------------
+F15 - INBOX (receiver)
+  OBJ  : Receiver inbox listing only legitimately delivered messages.
+  SCOPE: GET /messages?box=inbox (sender!=me, status DELIVERED/READ); row:
+         sender name, preview, encrypted badge, qber, key_status, delivered
+         time, attack_detected false always here; click -> /messages/:id to
+         read (decrypt view). BLOCKED messages NEVER appear (server filters);
+         UI renders zero slack even if they did.
+  PAGES   : /inbox.
+  COMP : MessageList, InboxRow, PreviewText, UnreadDot, InboxEmpty.
+  STATE: query ['messages','inbox'}; WS message.delivered/read invalidate.
+  API  : GET /api/v1/messages/inbox (paginated).
+  WS   : user event feed.
+  DATA : list built entirely from API.
+  ACT  : open message, mark read, paginate, filter by unread.
+  LOAD : rows skeleton.
+  EMPTY: "No messages yet - start a secure conversation".
+  ERR  : error panel with retry.
+  OK   : list reflects delivered messages only.
+  SEC  : inbox endpoint excludes BLOCKED/REJECTED by backend contract; UI
+         additionally filters status to DELIVERED/READ before rendering.
+  TEST : MSW tests verifying blocked messages are absent.
+  DONE : inbox matches backend delivered view; read() works.
+
+--------------------------------------------------------------------------------
+F16 - SENT MESSAGES ("sent")
+  OBJ  : Outbox for the sender; every sent attempt with its result state.
+  SCOPE: GET /messages?box=sent; row shows receiver name, result pill
+         (per message.status), protocol, qber, key_status, timestamps;
+         blocked rows clearly labeled "BLOCKED - not delivered" with
+         a link to the security report; paginated. Mirrors inbox layout.
+  PAGES: /sent.
+  COMP : SentRow, ResultPill, BlockedNoticeRow, PaginationBar.
+  STATE: query [messages, sent]; invalidated by message.* WS events.
+  API  : GET /api/v1/messages/sent (paginated).
+  WS   : message.delivered / message.blocked invalidate the row list.
+  DATA : status, qber, protocol, attack_detected from DB rows.
+  ACT  : open sent detail; retry compose for a blocked recipient.
+  LOAD : rows skeleton.
+  EMPTY: No sent messages yet.
+  ERR  : list error panel with retry.
+  OK   : every sent message shows its true terminal state (READ/BLOCKED).
+  SEC  : sender privacy; no receiver email beyond public profile data.
+  VAL  : n/a.
+  TEST : result pill mapping per status; blocked badge test.
+  DEPS : F4; backend B28.
+  DONE : sent list equals backend query; blocked items distinguishable.
+
+--------------------------------------------------------------------------------
+F17 - COMMUNICATION HISTORY
+  OBJ  : full history of the user communications (secure and attacked).
+  SCOPE: GET /communications?scope=history as sender or receiver; rows with
+         counterpart, protocol, state, qber, outcome badges; filters by
+         status and date range; each row links to F9 detail; summary chips.
+  PAGES: /history.
+  COMP : HistoryTable, HistoryFilters, OutcomeBadge, StatChips.
+  STATE: query [communications, history]; filter params in URL.
+  API  : GET /api/v1/communications (scope=history, filters, pagination).
+  WS   : invalidate on communication.state_changed, message.*.
+  DATA : rows and chips from the API (no hard-coded aggregates).
+  ACT  : filter, paginate, open detail.
+  LOAD : table skeleton.
+  EMPTY: No communications yet.
+  ERR  : error panel + retry.
+  OK   : list matches backend history exactly.
+  SEC  : history limited to sessions where the user is sender or receiver.
+  VAL  : query validation via types and API enums.
+  TEST : filter/pagination tests with mocked fixtures.
+  DEPS : F9.
+  DONE : history lists all user communications with correct badges.
+
+--------------------------------------------------------------------------------
+F18 - SECURITY REPORTS
+  OBJ  : readable security report per message, generated by backend only.
+  SCOPE: GET /messages/{id}/security-report; report card: message id,
+         sender, receiver, protocol, QBER, threshold, key_status,
+         attack_detected, encryption_status, delivery_status, created_at;
+         simulated threshold disclaimer; print via print CSS; list page.
+  PAGES: /security-reports, /messages/:id.
+  COMP : ReportCard, ReportTimeline, ReportExportButton, ReportsTable.
+  STATE: TanStack [reports] and [report, messageId].
+  API  : GET /messages/{id}/security-report; GET /security-reports.
+  WS   : refresh on security.* events.
+  DATA : every number from the security_reports row.
+  ACT  : view, print, filter by outcome.
+  LOAD : report skeleton.
+  EMPTY: No reports yet.
+  ERR  : 404 report not found; 403 foreign session.
+  OK   : report matches backend row field for field.
+  SEC  : reports never contain key material or plaintext.
+  VAL  : n/a.
+  TEST : report rendering from mocked payload.
+  DEPS : F13; backend B27.
+  DONE : reports render for both secure and blocked paths.
+===============================================================================
+--------------------------------------------------------------------------------
+F19 - EVE LOGIN (attacker entry)
+  OBJ  : Attacker login routing and eve-zone onboarding.
+  SCOPE: Standard /login used with attacker credentials; after success the
+         frontend routes to /eve/dashboard (role==ATTACKER); dedicated copy
+         explaining this is a SIMULATED attacker role on demo data; session
+         persistence identical to F3 (authStore).
+  PAGES: /login (role-aware redirect), /eve/dashboard (landing).
+  COMP : RoleOnboardingBanner, (reuses F3 components).
+  STATE: authStore role selector; guards reuse F4 RequireAuth([ATTACKER]).
+  API  : POST /auth/login; GET /auth/me.
+  WS   : connect /ws/eve/events on entry.
+  DATA : role from login response drives redirect and sidebar.
+  ACT  : login, dismiss onboarding banner, logout.
+  LOAD : auth-check loader.
+  EMPTY: n/a.
+  ERR  : INVALID_CREDENTIALS / USER_DISABLED friendly messages.
+  OK   : eve zone renders with dedicated theme accent.
+  SEC  : attacker never granted any user/admin routes by the guard.
+  VAL  : login form validation (F3).
+  TEST : route guard denial for USER role on /eve/*.
+  DEPS : F3, F4.
+  DONE : attacker login reaches eve zone; guards verified.
+
+--------------------------------------------------------------------------------
+F20 - EVE DASHBOARD
+  OBJ  : Attacker overview with live active sessions and attack stats.
+  SCOPE: Stat cards (active sessions, total attacks, detected, not detected),
+         live list of eligible active sessions (metadata only), quick link to
+         configure an attack; detection-rate KPI; all values from API.
+  PAGES: /eve/dashboard.
+  COMP : EveStatCard, ActiveSessionsTable, EveKpi, LiveBadge.
+  STATE: TanStack queries; WS-fed live rows.
+  API  : GET /api/v1/eve/dashboard/summary; GET /communications/active.
+  WS   : /ws/eve/events -> communication.created, attack.* invalidations.
+  DATA : every count/KPI from backend queries (no hard-coded numbers).
+  ACT  : select session -> configure; filter list by protocol.
+  LOAD : skeleton cards.
+  EMPTY: No active sessions eligible for attack.
+  ERR  : panel error + retry.
+  OK   : dashboard mirrors backend eve summary 1:1.
+  SEC  : list shows only metadata; no ciphertext/keys/plaintext fields exist
+         in the response shape (Section 14.3).
+  VAL  : n/a.
+  TEST : renders from mocked eve summary; empty state test.
+  DEPS : F19; backend B22.
+  DONE : dashboard numbers equal backend eve summary; live via WS.
+
+--------------------------------------------------------------------------------
+F21 - ACTIVE COMMUNICATION MONITORING (EVE)
+  OBJ  : Dedicated target picker with run-state badges.
+  SCOPE: GET /communications/active (window states only per Section 14.1);
+         table with communication id, sender, receiver, protocol, state,
+         created_at; row actions: Configure attack (disabled if window closed
+         by the time of click -> refetch and show WINDOW_CLOSED notice).
+  PAGES: /eve/active-sessions.
+  COMP : ActiveCommTable, WindowBadge, ConfigureBtn.
+  STATE: query ['active-sessions']; refetch on eve WS events.
+  API  : GET /api/v1/communications/active.
+  WS   : communication.created (new target), communication.state_changed
+         (window opens/closes), attack.detected.
+  DATA : full table from API.
+  ACT  : refresh list, open configure, sort.
+  LOAD : rows skeleton.
+  EMPTY: No attackable communications right now.
+  ERR  : error panel + retry.
+  OK   : list reflects current backend windows exactly.
+  SEC  : metadata-only; eavesdropper cannot open user session details.
+  VAL  : n/a.
+  TEST : window badge transitions from API fixture.
+  DEPS : F20; backend B22.
+  DONE : target list stays in sync with backend windows.
+
+--------------------------------------------------------------------------------
+F22 - ATTACK CONFIGURATION
+  OBJ  : Eve configures an attack on a chosen communication.
+  SCOPE: /eve/attack/configure/:communicationId form: attack_type select
+         (INTERCEPT_AND_RESEND only, disabled if more later [REC]), strength
+         slider 10..100% with preview readout, summary card (target meta),
+         submit -> POST /communications/{id}/attacks -> navigate to run view;
+         back navigation; window-closed guard messaging.
+  PAGES: /eve/attack/configure/:communicationId.
+  COMP : AttackForm, StrengthSlider, TargetSummaryCard, ConfigureScopes.
+  STATE: attackStore {communicationId, type, strength}.
+  API  : POST /api/v1/communications/{id}/attacks.
+  WS   : none pre-submit.
+  DATA : target meta from GET /communications/active entry (kept in store).
+  ACT  : adjust slider, submit, go back.
+  LOAD : submit spinner.
+  EMPTY: n/a.
+  ERR  : ATTACK_WINDOW_CLOSED -> explain and re-list; validation errors.
+  OK   : toast + navigate to /eve/attack/run/:communicationId.
+  SEC  : Eve can only configure; execution belongs to backend simulation.
+  VAL  : strength 0.1..1.0; type enum.
+  TEST : form submit with MSW; window-closed error path.
+  DEPS : F21; backend B23.
+  DONE : attack creation succeeds when window open; clean error otherwise.
+--------------------------------------------------------------------------------
+F23 - ATTACK EXECUTION VISUALIZATION
+  OBJ  : Live animated view of the running attack simulation.
+  SCOPE: /eve/attack/run/:communicationId; reads attack id from navigation
+         state or GET /attacks?communication_id=; renders step sequence
+         (target acquired -> intercepting states -> eve measurement ->
+         resend -> errors recomputed -> QBER recalculated -> security
+         evaluation -> verdict) driven by WS attack.started/attack.progress/
+         attack.detected; progress percent from backend payload; when done
+         redirect effect to result view (F24) with the final payload.
+  PAGES: /eve/attack/run/:communicationId.
+  COMP : AttackStepper, InterceptProgressBar, QubitInterceptLog (reuses F12
+         transcript pieces), VerdictFlash.
+  STATE: live attackStore {runId, progress, steps}.
+  API  : GET /api/v1/attacks?communication_id= (poll fallback when WS down).
+  WS   : attack.started, attack.progress, attack.detected (MUST HAVE).
+  DATA : progress values from WS payloads only.
+  ACT  : watch run; expand detail log; manual stop (btn -> abort job [REC]).
+  LOAD : waiting-for-start splash.
+  EMPTY: attack not found.
+  ERR  : WS drop -> reconnect banner; 404.
+  OK   : smooth animation ends with verdict navigation.
+  SEC  : shows only per-attack simulation counters, never message data.
+  VAL  : n/a.
+  TEST : step order rendering from scripted WS fixture.
+  DEPS : F22; backend B33 (events).
+  DONE : animated run view faithfully mirrors backend attack simulation.
+
+--------------------------------------------------------------------------------
+F24 - ATTACK RESULT
+  OBJ  : Final attack outcome: numbers, detection verdict, impact.
+  SCOPE: GET /attacks/{attack_id}; render: attack type + strength,
+         states_intercepted, states_modified, qber_before vs qber_after
+         (Recharts comparison), threshold, detection_status badge
+         (DETECTED/NOT_DETECTED), consequence chips (KEY_REJECTED,
+         message BLOCKED) when detected; copy out to attack history.
+  PAGES: /eve/attack/result/:attackId.
+  COMP : AttackResultCard, QberBeforeAfterChart, DetectionBadge, EffectList.
+  STATE: query [attacks, attackId].
+  API  : GET /api/v1/attacks/{id}.
+  WS   : none on completion; invalidate on attack.* while running.
+  DATA : all numbers from the attack row.
+  ACT  : view, link to history, copy summary.
+  LOAD : card skeleton.
+  EMPTY: n/a.
+  ERR  : 404 own-attack-filtered; 403.
+  OK   : result reflects stored row values 1:1.
+  SEC  : eve sees only attack-window data for the own launched attack.
+  VAL  : n/a.
+  TEST : detection status mapping and chart data from fixture.
+  DEPS : F23.
+  DONE : result page consistent with attack row.
+
+--------------------------------------------------------------------------------
+F25 - EVE ATTACK HISTORY
+  OBJ  : Eve's full history of launched attacks with outcomes.
+  SCOPE: GET /attacks/history (paginated); filters: detected/not detected,
+         date range; row: target id, type, strength, qber_before -> qber_after,
+         detection, timestamp; opens F24 detail.
+  PAGES: /eve/attack/history.
+  COMP : EveHistoryTable, EveHistoryFilters, TrendBadge, Pagination.
+  STATE: query [eve, attacks] with filters.
+  API  : GET /api/v1/attacks/history (paginated).
+  WS   : invalidate on attack.started/detected.
+  DATA : rows purely from API.
+  ACT  : filter, paginate, open detail.
+  LOAD : table skeleton.
+  EMPTY: No attacks launched yet.
+  ERR  : error panel.
+  OK   : history equals attacker-own attack rows.
+  SEC  : only the authenticated attacker attacks; no user data.
+  TEST : pagination + filter tests.
+  DEPS : F24; backend B29.
+  DONE : eve history complete.
+--------------------------------------------------------------------------------
+F26 - ADMIN DASHBOARD
+  OBJ  : Platform command center with live statistics.
+  SCOPE: GET /admin/dashboard/summary; stat cards (total users, active
+         communications, messages delivered, messages blocked, attacks
+         detected, attack detection rate, QBER average); charts: comms per
+         day, security outcomes pie, protocol usage bars; recent audit trail
+         mini-feed; real-time pulse via admin WS channel.
+  PAGES: /admin/dashboard.
+  COMP : AdminStatGrid, OutcomePieChart, DailyBars, ProtocolUsageChart,
+         AuditFeed, LiveIndicator.
+  STATE: TanStack queries + admin WS invalidation.
+  API  : GET /api/v1/admin/dashboard/summary.
+  WS   : /ws/admin/events -> invalidate on any platform event.
+  DATA : all figures from backend aggregates (no static numbers).
+  ACT  : time-range switch for charts, drill into lists.
+  LOAD : skeleton cards.
+  EMPTY: zero-state cards (ignore).
+  ERR  : dashboard error panel.
+  OK   : numbers match backend admin aggregates.
+  SEC  : aggregates only; no decrypted content anywhere.
+  VAL  : n/a.
+  TEST : renders from mocked admin summary.
+  DEPS : F4; backend B30/B31.
+  DONE : admin dashboard fully backend-driven and live.
+
+--------------------------------------------------------------------------------
+F27 - USER MANAGEMENT UI (ADMIN)
+  OBJ  : Manage platform users (list, search, enable/disable).
+  SCOPE: GET /admin/users (paginated, search by name/email/QSC ID); user row
+         with role badge, status, created_at; actions: disable/reenable
+         (PATCH /admin/users/{id}); detail drawer shows fields (never email
+         password); confirm dialog for destructive ops.
+  PAGES: /admin/users.
+  COMP : AdminUsersTable, UserDrawer, RoleBadge, EnableToggle, ConfirmDialog.
+  STATE: query [admin,'users'] + mutation invalidations.
+  API  : GET /admin/users; PATCH /admin/users/{id}.
+  WS   : invalidate on user.* admin events.
+  DATA : rows and counts from API.
+  ACT  : search, page, toggle state, open drawer.
+  LOAD : table skeleton.
+  EMPTY: no users match filter.
+  ERR  : op errors (e.g., ADMIN_CANNOT_DISABLE_SELF).
+  OK   : toggle reflects immediately; toasts confirm.
+  SEC  : no passwords ever rendered; disable keeps history rows.
+  VAL  : search min length and enum params.
+  TEST : list + toggle flows with MSW.
+  DEPS : F26.
+  DONE : admin can manage user active status end-to-end.
+
+--------------------------------------------------------------------------------
+F28 - SECURITY MONITORING UI (admin)
+  OBJ  : Real-time security and attack event viewer.
+  SCOPE: GET /admin/security-events (paginated; filters: detected, message
+         status, date); live panel appends WS security.* and attack.* events;
+         per-row: communication id, protocol, QBER, threshold, key status,
+         verdict, timestamp; quick link to protocol analytics.
+  PAGES: /admin/security.
+  COMP : SecurityEventsTable, VerdictBadge, LiveStreamHint, FilterBar.
+  STATE: query [admin security]; live buffer in uiStore.
+  API  : GET /api/v1/admin/security-events.
+  WS   : admin channel (MUST HAVE for live feed).
+  DATA : rows from API; live rows from WS.
+  ACT  : filter, pause live, refresh, drill to protocol page.
+  LOAD : table skeleton.
+  EMPTY: No security events yet.
+  ERR  : error panel.
+  OK   : feed matches backend events.
+  SEC  : security events contain no message content or keys.
+  VAL  : filters enum-checked.
+  TEST : live append without duplicates after reconnect.
+  DEPS : F26/F30.
+  DONE : security feed live from backend events.
+--------------------------------------------------------------------------------
+F29 - PROTOCOL ANALYTICS
+  OBJ  : Protocol usage and performance analytics for admin.
+  SCOPE: GET /admin/protocol-analytics; per-protocol: sessions count,
+         average QBER, key acceptance rate, attacks on protocol, avg
+         confidence from ai_recommendations; comparative bar + trend charts;
+         protocol registry status table (supported/stub); note that v1 runs
+         BB84 while others are stubs.
+  PAGES: /admin/protocols.
+  COMP : ProtocolUsageBars, QberByProtocolChart, RegistryTable, AcceptRateCard.
+  STATE: query ['admin','protocols'] with range param.
+  API  : GET /api/v1/admin/protocol-analytics.
+  WS   : invalidate on qkd.completed / attack.detected admin events.
+  DATA : charts from stored QKD/attack/communication rows.
+  ACT  : switch date range, drill into protocol sessions.
+  LOAD : chart skeletons.
+  EMPTY: zero sessions for protocol.
+  ERR  : error panel.
+  OK   : analytics match DB aggregates.
+  SEC  : aggregates; no keys.
+  TEST : chart inputs from fixture summary.
+  DEPS : F26; backend B31.
+  DONE : protocol analytics real and consistent.
+
+--------------------------------------------------------------------------------
+F30 - AUDIT LOGS (admin)
+  OBJ  : Browse the full audit trail.
+  SCOPE: GET /admin/audit-logs (paginated, filters: user, action,
+           date range); columns: id, time, user (name/role), action,
+         description; read-only; export CSV button (client-side from loaded
+         page or dedicated endpoint [REC]).
+  PAGES: /admin/audit.
+  COMP : AuditTable, AuditFilters, ExportCsvButton, ActionBadge.
+  STATE: query [admin, audit] + filters.
+  API  : GET /api/v1/admin/audit-logs.
+  WS   : append live audit events for admin.
+  DATA : rows from API.
+  ACT  : filter, page, export.
+  LOAD : table skeleton.
+  EMPTY: no matching audit rows.
+  ERR  : panel.
+  OK   : log matches backend storage.
+  SEC  : audit text must not embed tokens/password hashes (backend rule).
+  TEST : filter + export tests.
+  DEPS : F26; backend B32.
+  DONE : audit browses/secures.
+
+--------------------------------------------------------------------------------
+F31 - WEBSOCKET / REAL-TIME INTEGRATION (global)
+  OBJ  : One wsClient wiring all channels and invalidation strategies.
+  SCOPE: wsClient wrapper (connect/disconnect/reconnect backoff, heartbeat,
+         typed event bus); eventTypes constants equal to Section 20;
+         connection-store (status badge everywhere); central event->invalidate
+         mapping table so ALL TanStack queries refetch on the right events;
+         reconnection refetch (safety net) of current page queries; tests with
+         a fake WebSocket.
+  PAGES: all live pages (F10, F20, F28, F9...).
+  COMP: LiveIndicator, ReconnectBanner, wsContext provider.
+  STATE: uiStore.wsStatus; per-route subscriptions cleaned on unmount.
+  API  : none new (client plumbing).
+  WS   : implements all channels per role.
+  DATA : ensures event payloads hydate the right tables.
+  ACT  : none direct; auto.
+  SEC  : never log payloads; tokens only for handshake.
+  TEST : reconnect, duplicate-event dedupe, refetch mapping.
+  DEPS : F1.
+  DONE : single wiring used by every live view; demos stay sync without poll.
+--------------------------------------------------------------------------------
+F32 - ERROR HANDLING / LOADING / EMPTY STATES (global)
+  OBJ  : Consistent UX for every async state across the app.
+  SCOPE: Shared ErrorPanel (retry, code mapping, safe message), standard
+         skeleton loaders per content type, uniform EmptyState with CTA,
+         toast/notification center, offline banner, optimistic-free mutation
+         feedback; error taxonomy mapping (Section 19) centralized in
+         errors.ts; invariant: no raw backend exception text on screen.
+  PAGES: all.
+  COMP : ErrorBoundary, ErrorPanel, Skeleton, EmptyState, Toaster, Banner.
+  STATE: uiStore {toasts[], banners[]}.
+  API  : consumes error envelope from apiClient.
+  WS   : reconnect/disconnect banners.
+  DATA : none.
+  ACT  : retry/cancel/dismiss actions.
+  TEST : each shared component + every widget's three states (loading/empty/error).
+  DEPS : F2.
+  DONE : every route demonstrates correct LOADING/EMPTY/ERROR treatments.
+
+--------------------------------------------------------------------------------
+F33 - RESPONSIVE DESIGN
+  OBJ  : Usable on desktop and mobile widths.
+  SCOPE: Tailwind breakpoints for layout grids (sidebars collapse under
+         lg, tables scroll horizontally, stepper becomes vertical on mobile,
+         charts stack); touch targets >= 44px; admin/admin tables horizontal-
+         scroll aware; verify 375px/768px/1280px breakpoints.
+  PAGES: all.
+  COMP : ResponsiveTable wrapper, CollapsibleSidebar.
+  STATE: uiStore viewport-derived classes only.
+  TEST : responsive snapshot tests per breakpoint on key pages.
+  DEPS : F2.
+  DONE : lighthouse-friendly layouts resolve at key viewports.
+
+--------------------------------------------------------------------------------
+F34 - REFERENCE UI INTEGRATION
+  OBJ  : Apply the provided reference image as style guide (if received).
+  SCOPE: Match layout geometry, spacing scale, typography, card styles,
+         header/sidebar composition, chart styling, status-chip design to
+         the image; keep all data dynamic (maps to API/WS). Do not copy
+         static numbers or claims. If no image was received, keep F2 tokens
+         as the baseline style and mark this phase DONE with a note.
+  PAGES: all.
+  COMP : restyle pass over primitives.
+  SEC  : presentation only; no behavioral changes.
+  DEPS : F2, F5+, design review.
+  DONE : visual audit screenshot set matches reference at key screens.
+
+--------------------------------------------------------------------------------
+F35 - ACCESSIBILITY / UX
+  OBJ  : WCAG 2.1 AA basics and keyboard flow for all flows.
+  SCOPE: semantic landmarks, focus management on modals/wizards, aria-live
+         for live updates (timeline/verdict/toasts), color contrast passes,
+         status not conveyed by color alone (badge text complements pills),
+         form labels, reduced-motion respect for animations, tooltips for
+         QKD jargon.
+  PAGES: all.
+  TEST  : axe-core scans on key pages; keyboard-only pass on wizard.
+  DEPS : F32.
+  DONE : axe: no critical violations; wizard keyboard-complete.
+
+--------------------------------------------------------------------------------
+F36 - FRONTEND TESTING
+  OBJ  : Automated component + workflow coverage.
+  SCOPE: Vitest + React Testing Library + MSW; unit: constants mappers,
+         guard matrix, wsClient, composeStore; component: primitives and key
+
+widgets; workflow: register -> login -> compose -> live session (mocked
+         WS); eve attack configuration flow; admin dashboard render; e2e via
+         Playwright (optional [REC]) against the real backend in CI.
+  PAGES  : all key routes.
+  DEPS  : all F phases.
+  DONE  : coverage >= 70% lines; all suites green in CI.
+
+--------------------------------------------------------------------------------
+F37 - FRONTEND FINAL VALIDATION
+  OBJ  : Shake out and certify the frontend against the integration matrix.
+  SCOPE : full run against a real backend (Section 21 matrix cells all
+          checked); no console errors; no unauthorized data visible;
+          performance sanity (initial bundle walk-through); reference image
+          compliance (F34); accessibility scan green; demo scripts executed
+          (Section 24); list of open issues, each with owner.
+  PAGESS  : production build check of every route.
+  DEPS   : all F phases + B37 demo backend.
+  DONE   : integration matrix 100%; demos run; no critical defects.
+===============================================================================
+================================================================================
+SECTION 18 - BACKEND DEVELOPMENT PHASES (Track B)  B1 - B38
+================================================================================
+Format per phase: OBJ/REQ/SVC/DB/API/REQ/SCHEMA/RESP/LOGIC/STATE/SEC/ERR/VAL/
+LOG/TEST/DEPS/DONE = Objective, Requirements, Service/module structure,
+Database impact, API endpoints, Request schema, Response schema, Business
+logic, State transitions, Security requirements, Error handling, Validation,
+Logging, Testing, Dependencies, Definition of Done. Unlisted fields default:
+DB=none, API=none, STATE=no direct session transitions, VAL=Pydantic schema
+validation, LOG=AuditService entry when the action is auditable.
+
+--------------------------------------------------------------------------------
+B1 - BACKEND FOUNDATION
+  OBJ  : FastAPI project skeleton with clean layering and conventions.
+  REQ  : Python 3.11 venv; pyproject.toml + lock file; package layout per
+         Section 10; FastAPI app factory; CORS middleware (env-allowed
+         origins); global exception handler returning the error envelope;
+         healthz endpoint; structured logging setup; pytest base config;
+         audit + realtime service skeletons so later phases can inject.
+  DB   : none in this phase (models B4).
+  API  : GET /api/v1/health -> {status, version, db: ok|error}.
+  REQ  : none.
+  RESP : health JSON.
+  LOGIC: app assembly; DI via Depends; request-id middleware.
+  STATE: none.
+  SEC  : no secrets in code; all settings resolved by B2; headers hidden.
+  ERR  : 500 -> code INTERNAL_ERROR with generic message + logged trace.
+  VAL  : n/a.
+  LOG  : startup/shutdown audit lines.
+  TEST : health returns 200; unknown route returns envelope 404.
+  DEPS : none.
+  DONE : uvicorn boots; pytest green; CORS works.
+
+--------------------------------------------------------------------------------
+B2 - ENVIRONMENT CONFIGURATION
+  OBJ  : Config source of truth for both tracks.
+  REQ  : pydantic-settings BaseSettings reading .env: DATABASE_URL,
+       JWT_SECRET_KEY, JWT_ALGORITHM=HS256, ACCESS_TOKEN_EXPIRE_MINUTES=30,
+       REFRESH_TOKEN_EXPIRE_DAYS=7, QSC_MASTER_KEY (32B b64) for key-at-rest
+       [REC], THRESHOLD_DEFAULT=0.11, CHANNEL_NOISE_DEFAULT=0.01,
+       QKD_QUBITS_DEFAULT=256, RATE_LIMIT per endpoint, CORS_ORIGINS,
+       LOG_LEVEL, ENABLE_ADMIN_BOOTSTRAP + ADMIN_EMAIL/ADMIN_PASSWORD
+       (bootstrap admin) [REC]. Enforced .env.example committed; .env
+       gitignored; settings object injected everywhere.
+  DB   : none yet.
+  API  : none (config only).
+  LOGIC: freezes once per process; startup schema validation.
+  SEC  : fails fast if QSC_MASTER_KEY shorter than 32 bytes in prod mode.
+  ERR  : IncompleteConfig error at startup -> clear message.
+  TEST : config parse on fixtures; secret defaults absent in non-dev env.
+  DEPS : B1.
+  DONE : settings load; startup fails loudly on misconfig.
+
+--------------------------------------------------------------------------------
+B3 - DATABASE ARCHITECTURE (schema plan + connection)
+  OBJ  : Establish ORM base, session factory, and DB wiring.
+  REQ  : SQLAlchemy 2.x engine/session factory from DATABASE_URL; Base
+       declarative; naming convention metadata; SQLite file for dev,
+       PostgreSQL for prod (tested both); transaction helper context
+       manager; repository base class with generic list/get/create/update.
+  SCOPE: no concrete models yet (B4).
+  API  : none (internal).
+  ERR  : DB_ERROR envelope on connectivity failure.
+  LOG  : engine creation events.
+  TEST : session opens/closes; rollback on exception.
+  DEPS : B2.
+  BLOCKS: B4, B13.
+  DONE : DB connections green against configured URL.
+
+--------------------------------------------------------------------------------
+B4 - DATABASE MODELS
+  OBJ  : All required + recommended models per Section 11.
+  REQ  : models: users, messages, communication_sessions, qkd_sessions,
+       attacks, security_reports, audit_logs + [REC]: ai_recommendations,
+       secret_keys, protocol_configs, refresh_tokens; correct FKs,
+       indexes (users.unique_user_id unique, email unique, FK indexes),
+       enums as simple CHECK constraints or Python-side constants with DB
+       CHECK where supported; sensitive columns flagged in model comments.
+  SCOPE: no service logic; pure ORM + Pydantic partial output.
+  API  : none.
+  LOGIC: relationships defined; cascade rules (no destructive deletes);
+       utcnow defaults; SoftDeletable mixin for users [REC].
+  TEST  : model compaction tests assert column existence via inspector;
+       constraint tests (duplicate email/qsc raise IntegrityError).
+  DEPS : B3.
+  DONE : migration-generated schema matches Section 11 exactly.
+
+--------------------------------------------------------------------------------
+B5 - MIGRATIONS
+  SCOPE: Alembic init, env.py wired to settings + models, baseline revision
+       autogenerated, seed/migration for default protocol_configs rows
+       (BB84 enabled threshold 0.11; other protocols disabled stubs) and
+       optional bootstrap admin + Eve accounts guarded by ENABLE_ADMIN_
+       BOOTSTRAP flag.
+  REQ  : upgrade heads/downgrade safe; dev DB reset script docs.
+  TEST : upgrade on fresh SQLite; downgrade back to base; seed sanity.
+  DEPS : B2.
+  DONE : `alembic upgrade head` works; seed idempotent runs twice alive.
+
+[schema evolution note] Further schema additions (B6 onward) land as new Alembic migrations only.
+--------------------------------------------------------------------------------
+B6 - AUTHENTICATION
+  OBJ  : Registration, login, JWT issuance/refresh, current-user retrieval.   REQ  : Endpoints below; bcrypt password hashing; PyJWT HS256 access tokens
+         (role + user_id + jti claims) and refresh tokens (rotate + revoke
+         via refresh_tokens table hash); password-strength policy (min 8,
+         reject email substring [REC]); case-insensitive unique email;
+         duplicate email error; disabled-account login denial; audit rows
+         for register/login/logout/refresh.
+  SVC  : services/auth_service.py (hashes, issues tokens), repositories/users,
+         repositories/refresh_tokens.
+  DB   : users (F5), refresh_tokens [REC].
+  API  : POST /api/v1/auth/register; POST /api/v1/auth/login;
+         POST /api/v1/auth/refresh; POST /api/v1/auth/logout;
+         GET /api/v1/auth/me.
+  REQSCHEMA: register {name, email, password}; login {email, password};
+         refresh {refresh_token}.
+  RESP : register 201 user (id, name, email, unique_user_id, role); login + 
+         refresh {access_token, refresh_token, token_type, expires_in, user};
+         me {user}.
+  LOGIC: register sets role=USER, generates QSC ID via B9; login verifies and
+         issues pair; refresh validates hash+expiry+rotation; logout revokes.
+  STATE: none (no session state); user created.
+  SEC  : timing-safe compare; bcrypt cost >= 12; tokens in HTTP-only secure
+         cookie OR JSON body [TBD - default Bearer body]; never log tokens.
+  ERR  : EMAIL_TAKEN, INVALID_CREDENTIALS, USER_DISABLED, TOKEN_*;
+         identical login error for wrong email/password (no enumeration).
+  VAL  : email format; password >= 8; 403 for disabled; Pydantic striong.
+  LOG  : audit register/login/logout; security events on brute force.
+  TEST : unit hashing/verify; integration register->login->me; refresh
+         rotation; disabled account; duplicate email.
+  DEPS : B2, B4, B5, B9(pre).
+  BLOCKS: B7 and everything that needs a caller.
+  DONE : full auth API passes integration tests; tokens verify.
+
+--------------------------------------------------------------------------------
+B7 - ROLE-BASED AUTHORIZATION
+  OBJ  : Enforce USER/ATTACKER/ADMIN boundaries on every route.
+  REQ  : dependency get_current_user (JWT -> user), require_roles decorator/
+         dependency list; central role matrix module (Section 4 rules);
+         403 ROLE_FORBIDDEN everywhere; ownership checks on resources
+         (messages/sessions/reports) separate from role checks; admin-only
+         config endpoints annotated requires role ADMIN; Eve routes never
+         receive keys/plaintext by construction (response models).
+  SVC  : core/dependencies.py + core/authorization.py + visibility.py.
+  DB   : none new (role column exists).
+  API  : n/a (middleware surface) + response-schema guard tests.
+  LOGIC: decorator/di composition: require_roles('USER') etc.; visibility
+       mapper for including/excluding sensitive fields per role.
+  TEST : matrix test: every endpoint x role x resource; negative cases
+       return 403 envelope; Eve never sees secret fields.
+  SEC  : parameterized permission constant; no role inference from client.
+  DEPS : B6.
+  BLOCKS: everything.
+  DONE : authorization matrix tests green; role separation airtight.
+
+--------------------------------------------------------------------------------
+B8 - USER MANAGEMENT
+  OBJ  : User CRUD-with-safety and profile surface.
+  REQ  : GET own profile; PATCH own name [TBD]; admin list/search users;
+       admin enable/disable user (is_active), admin delete blocked (soft);
+       no role can read password_hash.
+  SVC  : services/user_service.py; repositories/users.py.
+  DB  : users table updates; history untouched on disable.
+  API  : GET /api/v1/users/me; PATCH /api/v1/users/me [TBD];
+       GET /api/v1/admin/users; PATCH /api/v1/admin/users/{id};
+  REQ  : PATCH {name?} for self; admin {is_active}.
+  RESP : user public model (no password_hash, no email to others).
+  LOGIC: disable prevents login (B6 USER_DISABLED) but keeps QSC ID rows.
+  STATE: none.
+  SEC  : admin cannot disable self (409 ADMIN_CANNOT_DISABLE_SELF);
+         no password resets this phase [REC later].
+  ERR  : USER_NOT_FOUND, ACCESS_DENIED.
+  TEST : profile PATCH validation; admin list filters; disable->login fails.
+  DEPS : B6/B7.
+  DONE : user mgmt endpoints + tests.
+
+--------------------------------------------------------------------------------
+B9 - UNIQUE QSC ID GENERATION
+  OBJ  : Generate collision-free QSC IDs at registration.
+  REQ  : format QSC-[A-Z0-9]{10} using secrets.choice over 36 chars;
+       retry loop on unique-violation up to 5 attempts; unique constraint
+       + index; generation function pure + injected (no RNG) for tests;
+       IDs never reused, never assigned to other accounts.
+  SVC  : services/qsc_id_service.py.
+  DB  : users.unique_user_id unique index.
+  LOGIC: creation happens inside register transaction (B6); deterministic
+       chunking.
+  TEST : uniqueness stress (1000 regs no collision small run seeded);
+       format test; collision-retry test with stubbed duplicates.
+  DEPS : B4.
+  DONE : uniqueness proven; malformed ids rejected at search boundary.
+
+--------------------------------------------------------------------------------
+B10 - USER SEARCH (by QSC ID)
+  OBJ  : Public search for message addressing.
+  REQ  : GET /api/v1/users/search?qsc_id=QSC-...; validates format
+       (regex else 422 INVALID_QSC_FORMAT); returns public profile only
+       (id, name, unique_user_id, role); excludes self? allowed (returns
+       flagged is_self [REC]); rate-limited (10/min) to prevent probing;
+       not found -> 404 USER_NOT_FOUND.
+  SVC  : services/user_service.search_by_qsc_id.
+  API  : GET /users/search.
+  RESP : {user: {id, name, unique_user_id}}.
+  LOGIC: simple indexed lookup with normalized uppercase; audit each search
+       action? [TBD - log only failures to discourage scanning].
+  TEST : found/not-found/invalid/format; rate-limit 429.
+  DEPS : B7/B8.
+  BLOCKS: B11.
+  DONE : receiver search works from frontend F7 with expected envelopes.
+
+
+--------------------------------------------------------------------------------
+B11 - MESSAGING SERVICE
+  OBJ  : Message creation, storage, and read-on-demand decryption.
+  REQ  : POST /messages {receiver_qsc_id, content, security_requirement};
+         validates receiver existence (B10), sender!=receiver (409
+         SELF_DELIVERY), content 1..2000; creates messages row in PENDING;
+         triggers session creation (B12); message row stores protocol only
+         after recommendation (B20); inbox and sent lists (B26); GET message
+         detail returns decrypted plaintext only to owner with status
+         DELIVERED/READ (B19 decrypt); read_at set on read.
+  SVC  : services/messaging_service.py (+ delivery in B26).
+  DB   : messages rows; indexes (sender_id, receiver_id, status, created_at).
+  API  : POST /api/v1/messages; GET /api/v1/messages/inbox;
+         GET /api/v1/messages/sent; GET /api/v1/messages/{id}.
+  RESP : create -> {message_id, communication_id}; detail includes content
+         ONLY for owner+delivered; lists include metadata rows only.
+  LOGIC: content is REQUIRED at creation (plaintext exists only transiently
+      in memory; stored encrypted after B19). zero plaintext in logs.
+  SEC  : ownership checks; BLOCKED/REJECTED messages never returned in
+         inbox (query forces status in (DELIVERED, READ)); sender view
+         allows REJECTED/BLOCKED with flag.
+  ERR  : USER_NOT_FOUND, SELF_DELIVERY, CONTENT_TOO_LONG.
+  VAL  : pydantic strict; content strip; receiver id format.
+  TEST : creation, inbox exclusivity, sent flags, detail authorization.
+  DEPS : B9/B10, B12(trigger); finalize after B19/B26.
+  BLOCKS: inbox/history phases (F15-F17).
+  DONE : message lifecycle APIs complete & authorized.
+
+--------------------------------------------------------------------------------
+B12 - COMMUNICATION SESSIONS
+  OBJ  : Session container created by messaging with status + timestamps.
+  REQ  : create session inside POST /messages (relationship 1:1 with message
+         for v1); GET /communications/{id} (owner) returns session + message
+         snapshot + recent events; GET /communications?scope=mine|history -
+         list owner sessions sorted desc; GET /communications/active for EVE
+         (metadata only, window states); completed_at set on terminal.
+  SVC  : services/session_service.py.
+  DB   : communication_sessions; one-to-one with messages via
+         communication_id FK.
+  RESP : session detail {id, sender, receiver, protocol, session_status,
+         created_at, completed_at, message_status, key_status, qber_latest}.
+  LOGIC: session creation always wrapped by state machine creation state;
+       timer cleanup of stuck sessions [REC: cron sweep -> FAILED];
+       scope filters enforce ownership (sender OR receiver) for USER;
+       Eve active list enforced in B22.
+  SEC  : owner-only detail; Eve metadata-only variant separate.
+  TEST : create->detail; mine/history lists; active window list.
+  DEPS : B11.
+  BLOCKS: B13/B14 onward.
+  DONE : sessions lifecycle baseline green.
+
+--------------------------------------------------------------------------------
+B13 - COMMUNICATION STATE MACHINE
+  OBJ  : The definitive transition engine (Section 08).
+  REQ  : StateMachineService implements the transition table + guards;
+       single entry point transition(session, new_state, actor) used by all
+       services; illegal transition -> 409 INVALID_STATE_TRANSITION;
+       transitions emitted as WS events after commit; audit row per
+       transition; helper query current_state; idempotent progress ticks
+       within QKD_RUNNING.
+  SVC  : services/state_machine.py + tests/table.
+  DB   : communication_sessions.session_status.
+  LOGIC: pure function validate(from,to,actor); actor role permitted set;
+       derived mapping message.status/key_status per Section 08 table.
+  SEC  : only service actors; no public API to force state.
+  TEST : every legal edge; every illegal edge; attack-window guard;
+       MAX_REATTACKS guard.
+  DEPS : B12.
+  BLOCKS : B14, B17, B20, B23-B26.
+  DONE : transition matrix tests green.
+
+--------------------------------------------------------------------------------
+B14 - BB84 ENGINE
+  OBJ : Confirm, sift, evaluate BB84 as specified (Section 13.2).
+  REQ: run(protocol='BB84', qubit_count, channel_noise, seed) -> BB84Result
+       {qubits_generated, alice_bases, states, bob_bases, measurement,
+       matching_bases, sifted_bits bits, compared_bits, errors, qber};
+       seeded RNG; random base choices uniform; measurement matrix rules
+       encode the ideal noiseless channel plus channel_noise flips;
+
+returns sifted key BITSTRING (metadata-only to callers; actual key bytes
+       derived in B18); deterministic per seed; pureness for tests.
+  SVC  : app/protocols/bb84.py implementing ProtocolBase (B21 interface);
+       engine wraps call.
+  DB   : none here (B15 persists).
+  LOGIC: classic Monte-Carlo; QBER = errors/compared_bits internally for
+       engine only (SecurityEngine decides after B17).
+  TEST : known-answer vector with stub RNG; distribution sanity (qber ~
+       channel_noise without Eve); determinism same seed; basis-matching
+       counts = expected ratio error bounds.
+  DEPS : B21 (registry interface), B13.
+  BLOCKS: B15, B16.
+  DONE : BB84 core correct via unit vectors.
+--------------------------------------------------------------------------------
+B15 - QKD SESSION MANAGEMENT
+  OBJ  : Orchestrate a full QKD run for a communication and persist results.   REQ  : pipeline orchestration: on PROTOCOL_SELECTED -> create qkd_sessions
+         baseline row (is_baseline=true, key_status PENDING), run engine
+         (B14), persist ALL counters, compute and persist QBER + threshold,
+         emit qkd.started/progress/completed WS; post-attack logic adds
+         is_baseline=false rows via B23; latest-row helper for security.
+  SVC  : services/qkd_service.py.
+  DB  : qkd_sessions full CRUD.
+  API  : GET /api/v1/communications/{id}/qkd -> {runs: [...]} (owner; Eve:
+         metadata subset via separate schema).
+  LOGIC: single-owner transaction; session key_status updated only via
+         StateMachine; run rows immutable after creation (append-only).
+  SEC  : API responses omit sifted key bits; size hints only.
+  TEST : persistence equality run->row; concurrency guard single run/session.
+  DEPS : B13, B14.
+  BLOCKS: B16/B17.
+  DONE : qkd_sessions rows correct for every simulated run.
+
+--------------------------------------------------------------------------------
+B16 - QBER ENGINE
+  OBJ  : Reliable QBER computation and boundaries.
+  REQ  : compute(errors, compared_bits) -> float [0..1]; guard divided-by-0;
+       used by BB84 result and by attack reruns; provide thresholdContext
+       (protocol threshold from protocol_configs or session override);
+       rounded to 6 decimals for storage/publication.
+  SVC  : services/qber_engine.py (pure function + config read).
+  DB   : qkd_sessions.qber, threshold.
+  LOGIC: enforced formula (no other path sets qber).
+  TEST : 0 errors ->0; all errors->1; mid values; zero denominator raises.
+  BLOCKS: B17.
+  DEPS : B14/B15.
+  DONE : QBER values provably derived from run counters.
+
+
+--------------------------------------------------------------------------------
+B17 - SECURITY DECISION ENGINE
+  OBJ  : Authoritative QBER->key decision and attack declaration.   REQ  : evaluate(qber, threshold) -> ACCEPTED if qber <= threshold else
+         REJECTED; attackDetected(qber_before, qber_after, threshold) ->
+         DETECTED/NOT_DETECTED by rule (after > threshold); gates
+         confirm_key_accepted(session) used by encryption (B19); emits
+         security.check_started / key_accepted / key_rejected events;
+         stores security state; downgrade guard (B24).
+  SVC  : services/security_engine.py.
+  DB   : reads qkd_sessions latest; writes message.security fields via
+         messaging; triggers B25 on rejection.
+  API  : GET /communications/{id}/security -> {decision, qber, threshold,
+         key_status, attack_detected} (owner).
+  LOGIC: single decision point; all callers must route through it.
+  TEST : matrix: qber below/at/above threshold; attack rerun cases;
+         downgrade rules; idsemantics.
+  DEPS : B15/B16, B13.
+  BLOCKS: B18/B19/B24/B25.
+  DONE : security decisions authoritative + tested.
+
+--------------------------------------------------------------------------------
+B18 - KEY MANAGEMENT
+  OBJ  : Derive, protect, store, destroy shared keys.
+  REQ  : HKDF-SHA256(sifted_bits, info=communication_id) -> 32B key;
+       store AES-GCM-encrypted under QSC_MASTER_KEY in secret_keys [REC];
+       rejected path stores nothing; load_key(communication) decrypts in-
+       process; expose NEVER: no API returns key material; key lifecycle
+       (accept->store; reject->nothing; post-delivery purge on read [REC]).
+  SVC  : services/key_service.py + crypto helper.
+  DB   : secret_keys [REC]; qkd key_status columns.
+  LOGIC: key existence reguired for encryption; strict failure if absent.
+  SEC  : constant-time compare; master key from env (B2); memory zeroing
+       best-effort; no logs.
+  TEST : derive stable same-input; store/decrypt round-trip; absent on
+       rejected path; API never leaks (schema assert).
+  DEPS : B17, B15, B2.
+  BLOCKS: B19.
+  DONE : key lifecycle correct and un-leakable.
+
+--------------------------------------------------------------------------------
+B19 - ENCRYPTION / DECRYPTION
+  OBJ : Standard-lib authenticated message encryption tied to QKD keys.   REQ : encrypt(communication) called only after SecurityEngine accepts:
+         generates AES-256-GCM key via B18, random 12B nonce, stores
+         ciphertext+nonce in messages (base64), sets message.status
+         ENCRYPTED; decrypt(message, owner) decrypts for DELIVERED/READ
+         within transaction; never stored plaintext; never custom crypto;
+         failure raises KEY_REJECTED accordingly.
+  SVC : services/encryption_service.py (wrapper on cryptographic lib).
+  API : indirect (message detail / delivery flows).
+  TEST : round-trip; reject-without-acceptance; tamper detection; nonce
+         uniqueness; cross-session failure.
+  DEPS : B17, B18.
+  BLOCKS: B26.
+  DONE : encryption/decryption verified with standard vectors.
+--------------------------------------------------------------------------------
+B20 - AI PROTOCOL RECOMMENDATION
+  OBJ : dynamic, auditable protocol selection (Section 12).
+  REQ : compute_feature_snapshot(session) from live inputs (channel noise,
+        security requirement, attack-risk metric, distance, per-protocol
+        efficiency) persisted jsonb; score protocols with weighted model
+        (weights from protocol_configs.parameters); confidence from softmax
+        margin; explanation template driven by winning/missing features;
+        persist ai_recommendations row; SET session.protocol = recommended;
+        enforce invariant: assert registry has protocol and protocol
+        supported else raise NOT_SUPPORTED (recommendation != execution is
+        a hard error); endpoints OWNER; events ai.analysis_started /
+        ai.protocol_selected.
+  SVC : services/ai_recommendation_service.py.
+  API : GET /api/v1/communications/{id}/recommendation (owner).
+  RESP: {protocol, confidence, explanation, scores, features, evaluated_at}.
+  TEST: scores sum sanity; confidence in [0,1]; invariant test (recommend
+        BB84 -> session.protocol==BB84); feature snapshot content; weights
+        change -> recommendation may change (dynamicity proof).
+  DEPS : B12/B13, B21 (registry capability metadata), B30 (weights admin).
+  BLOCKS: F11; has effect on F12 via QKD select.
+  DONE : recommendations dynamic, stored, invariant-tested.
+
+--------------------------------------------------------------------------------
+B21 - PROTOCOL REGISTRY / MULTI-PROTOCOL ARCHITECTURE
+  OBJ : pluggable QKD protocol layer.
+  REQ : ProtocolBase + registry (name, requires_entanglement, supported,
+        run(), key_efficiency()); register BB84 supported; B92/E91/SIX/
+        SARG04/DECOY registered unsupported (stub raises NOT_IMPLEMENTED);
+        get(name) raises PROTOCOL_NOT_FOUND; enumerate endpoint
+        GET /api/v1/protocols (AUTH) -> [{name, supported, default_threshold}]
+        so admin/UI show registry truth.
+  SVC : app/protocols/registry.py.
+  TEST: registry register/list; BB84 end-to-end via registry; stub 501.
+  DEPS : B1.
+  BLOCKS: B14, B20.
+  DONE : adding future protocol = new module + two registrations, no core
+        edits.
+
+--------------------------------------------------------------------------------
+B22 - EVE ATTACKER SYSTEM
+  OBJ : Eve surfaces and legitimate-attack availability.
+  REQ : Eve login uses B6 with role ATTACKER; GET /communications/active
+        (window states, metadata-only schema); GET /eve/dashboard/summary
+        (counts + detection rate); all EVE lists exclude denied fields by
+        construction; attacks rows ownership; eve.history in B29; admin
+        creates attacker accounts (B30 attacker mgmt) with role
+        ATTACKER + is_active.
+  SVC : services/attacker_service.py.
+  API : GET /api/v1/communications/active; GET /api/v1/eve/dashboard/summary;
+        GET /api/v1/attacks/{id}; GET /api/v1/attacks/history.
+  TEST : eve visibility schema test (no keys/plaintext); window eligibility;
+        role boundary vs USER/ADMIN.
+  DEPS : B7, B12.
+  BLOCKS: F19-F25.
+  DONE : Eve surfaces real and safe.
+
+--------------------------------------------------------------------------------
+B23 - INTERCEPT-AND-RESEND SIMULATION
+  OBJ : simulated attack that materially changes QKD run results.
+  REQ : launch(communication_id, attacker_id, attack_type=INTERCEPT_AND_
+        RESEND, strength in [0.1,1]): gate window + attacker role + attack
+        count < MAX_REATTACKS; rerun seeded simulation with Eve: inter-
+        cept round(strength*n) qubits measure random bases resend; write
+        new qkd row is_baseline=false with recomputed error/qber; persist
+        attack row with qber_before/after/states/...; call SecurityEngine;
+        WS attack.started/progress/detected; states via StateMachine;        deterministic reruns (seed from communication_id+run_count).
+  SVC : services/attack_simulation_service.py.
+  API : POST /api/v1/communications/{id}/attacks; GET /api/v1/attacks/{id}.
+  TEST : attack raises QBER (qber_after >= qber_before); determinism;
+        strength bound; window-closed; self-not-detectable (strength low).
+  DEPS : B22/B15/B17/B13.
+  BLOCKS: B24/B25.
+  DONE : attack simulation affects stored counters and QBER (verified max).
+--------------------------------------------------------------------------------
+B24 - ATTACK DETECTION
+  OBJ  : turn post-attack QBER into an auditable DETECTED verdict.
+  REQ  : SecurityEngine reads the new is_baseline=false qkd run, computes
+        qber_after vs threshold, sets detection_status (DETECTED or
+        NOT_DETECTED); persists it on the attacks row; updates
+        message.attack_detected; emits attack.detected event; increments
+        the re-attack counter under MAX_REATTACKS guard.
+  LOGIC: detection threshold is the same single source as the security
+        threshold (protocol_configs).
+  TEST : strength just above threshold -> DETECTED; far below -> NOT.
+  DEPS : B23, B17, B13.
+  DONE : detection outcomes consistent and audited.
+
+--------------------------------------------------------------------------------
+B25 - MESSAGE BLOCKING
+  OBJ  : enforce the BLOCKED path end-to-end.
+  REQ  : on REJECTED decision from SecurityEngine: StateMachine advances
+        KEY_REJECTED -> BLOCKED; message.status=BLOCKED,
+        key_status=REJECTED, attack_detected=true; encrypted_message
+        remains null; receiver inbox queries only ever match status in
+        (DELIVERED, READ); sender sent view shows BLOCKED with a link to
+        the security report; WS message.blocked event; audit entry.
+  TEST : receiver never sees blocked message; sender does; report exists.
+  DEPS : B17, B24, B13, B11.
+  DONE : blocking path proven end-to-end.
+
+--------------------------------------------------------------------------------
+B26 - MESSAGE DELIVERY / INBOX
+  OBJ  : secure-path mailbox: delivery only for accepted+encrypted keys.
+  REQ  : after ENCRYPTED -> DELIVERED transition mark DELIVERED; receiver
+        inbox endpoint returns only delivered/read rows (paginated);
+        sender sent list mirrors the same rows with sender-side labels;
+        read endpoint sets READ and read_at and emits message.read;
+        decryption allowed only at DELIVERED/READ via B19; a single
+        DeliveryService owns ENCRYPTED -> DELIVERED -> READ transitions.
+  SVC  : services/delivery_service.py + inbox queries in messaging repo.
+  API  : GET /messages/inbox; GET /messages/sent; GET /messages/{id}.
+  TEST : delivered appears for receiver; read sets read_at; blocked stays
+        invisible (cross-checked with B25).
+  DEPS : B19, B25, B11.
+  DONE : inbox/delivery contract green for front-ends F15/F16.
+--------------------------------------------------------------------------------
+B27 - SECURITY REPORTS
+  OBJ  : Persist and serve the authoritative report per message.
+  REQ  : on delivery or blocking, ReportingService writes security_reports
+        row {message_id, protocol, qber, attack_detected, key_status,
+        encryption_status, delivery_status, created_at}; endpoints:
+        GET /messages/{id}/security-report (owner) and GET list for owner;
+        report fields always from stored rows never computed front-side.
+  SVC  : services/reporting_service.py.
+  API  : GET /api/v1/messages/{id}/security-report; GET /api/v1/security-reports.
+  TEST : report exists for both terminal paths; values equal source rows.
+  DEPS : B25, B26, B17.
+  BLOCKS: F18.
+  DONE : reports honest and owner-scoped.
+
+--------------------------------------------------------------------------------
+B28 - COMMUNICATION HISTORY
+  OBJ  : user and platform history queries.
+  REQ  : GET /communications?scope=mine|history returns owned sessions with
+        status, protocol, qber-latest, timestamps, pagination; admin variant
+        GET /admin/communications for monitoring with role meta; filters
+        status/date; never leaks other users' message content;
+  TEST : owner boundary; pagination; filters; blocked visible as BLOCKED.
+  DEPS : B12, B26.
+  DONE : history API correct for F17.
+
+--------------------------------------------------------------------------------
+B29 - EVE ATTACK HISTORY
+  REQ  : GET /api/v1/attacks/history returns the VIEWING attacker owns rows
+        (attacker_id = self), newest first, paginated; detail protected;
+        columns = attack row minus secrets.
+  TEST : eve sees only own attacks; admin sees all (B30 variant).
+  DONE : F25 backed completely.
+
+--------------------------------------------------------------------------------
+B30 - ADMIN SERVICES
+  OBJ  : admin management surfaces (users, attackers, config, stats).
+  REQ  : endpoints: GET /admin/users; PATCH /admin/users/{id} (is_active);
+        POST /admin/attackers {name,email,password} (creates role ATTACKER);
+        GET /admin/attackers; PATCH /admin/attackers/{id} (reset password
+        [REC], enable/disable); GET /admin/dashboard/summary (counts,
+        detection rate); GET /admin/communications; PATCH /admin/config
+        (threshold/protocol params, audit-all); all ADMIN-role + audit.
+  SVC  : services/admin_service.py.
+  TEST : attacker creation login works role ATTACKER; self-disable blocked;
+        config change audited and effective for next run.
+  DEPS : B7, B8, B22, B31.
+  BLOCKS: F26-F30.
+  DONE : admin surfaces complete and audited.
+
+--------------------------------------------------------------------------------
+B31 - PROTOCOL ANALYTICS
+  REQ  : GET /admin/protocol-analytics aggregates from qkd_sessions +
+        communication_sessions + attacks + ai_recommendations: per protocol
+        count, avg qber, acceptance rate, attacks count, avg confidence;
+        time-series slice for charts; cached 60s (Cache-Control) but never
+        static.
+  TEST  : aggregates verify against known fixtures; empty protocol row.
+  DEPS : B30.
+  DONE : analytics matches DB exactly.
+
+--------------------------------------------------------------------------------
+B32 - AUDIT LOGGING
+  OBJ  : complete, unforgeable event trail.
+  REQ  : AuditService.record(user, action, description) called by every
+        phase for auditable actions (register, login, logout, message.create,
+        session.created, recommend, qkd.run, qber, key.accept/reject, attack,
+        detection, block, deliver, read, report, admin.*, config.update);
+        GET /admin/audit-logs (paginated, filters user/action/range);
+        sensitive field redaction policy (no tokens/password hashes/keys);
+  Rows must never carry tokens, hashes, keys or plaintext content. Tests assert presence of
+        required actions for every critical path.
+  DEPS : B1, B30.
+  BLOCKS: F30.
+  DONE : audit trail complete for demo scenarios.
+--------------------------------------------------------------------------------
+B33 - WEBSOCKET / REAL-TIME EVENTS
+  OBJ  : live event bus per Section 16/20.
+  REQ  : connection manager (channels user/eve/admin/communication);
+        handshake verifies JWT (query ?token=) and role; non-connected
+        clients unaffected; server heartbeat ping every 30s; each service
+        emits via realtime.emit AFTER commit; events include envelope
+        {type, communication_id, state, actor_role, payload, timestamp};
+        per-user filter for message/session events; payload scrubber for
+        Eve/admin channels (no keys/plaintext); reconnect receives current
+        state snapshot (REST addresses misses).
+  SVC  : app/ws/manager.py + realtime_service.py.
+  TEST : connect auth failures rejected; event routed to correct
+        audience; disconnect cleanup; payload scrub unit tests.
+  DEPS : B6 (auth), B13 (state events), B17 (security events).
+  BLOCKS: F31.
+  DONE : demos stream live state to both browsers + eve/admin.
+
+--------------------------------------------------------------------------------
+B34 - API VALIDATION / ERROR HANDLING (hardening pass)
+  OBJ  : consistent strict validation and safe error responses.
+  REQ  : pydantic models for every route (v2); global handler mapping all
+        exceptions to envelope {code, message, details}; 404 shorthand for
+        missing resources; request-id header propagated in logs; include
+        OpenAPI tags/descriptions for contract quality; strict 4xx codes:
+        QUANTUM_ERROR codes catalog (Appendix in Section 19); reject
+        unknown fields (extra=forbid) on request models.
+  TEST : validation matrix; envelope correctness; no stacktraces leaked.
+  DEPS : B1.
+  DONE : every endpoint validates; errors consistent.
+
+--------------------------------------------------------------------------------
+B35 - SECURITY HARDENING
+  REQ  : rate limits (auth endpoints 5/min/IP; search 10/min; attack 3/min;
+        admin tooling) via isolated interface (slowapi); CORS restricted via
+        env; security headers middleware; JWT secret rotation support
+        (CONFIG_JWT_MAX_AGE); refresh-token rotation + reuse detection;
+        input sanitization (length limits, content trims); SQLAlchemy
+        parameterized queries only; no sensitive fields in OpenAPI schemas
+        (secret keys/plaintext never in response models); password policy;
+        fail-closed default roles.
+  TEST : rate limit 429; header presence; OpenAPI schema no-key grep test.
+  DEPS : B6, B7, B2.
+  DONE : passes Section 22 checklist items.
+
+--------------------------------------------------------------------------------
+B36 - BACKEND TESTING (unit & API)
+  logic in test/unit, test/api: auth, user, qsc id uniqueness, search,
+        messaging, sessions, all state transitions, BB84 (known answers,
+        determinism), QBER, security decisions, encryption round-trip,
+        AI recommendation + invariant, attack rerun determinism + QBER
+        impact, blocking, delivery, reports, audit presence; API tests via
+        httpx AsyncClient against a test DB (SQLite in-memory or postgres
+        test schema); coverage gate 80%+ critical modules.
+  DEPS : everything up to B35.
+  DONE : unit+API suites green with coverage gate.
+
+--------------------------------------------------------------------------------
+B37 - INTEGRATION TESTING
+  run : backend end-to-end over store+API: scenario normal (register,
+ alice & bob, search, compose, recommend==execution, qkd, qber <= t,
+        accepted, encrypt, deliver, read, report) and scenario attack
+        (eve launches attack on active session, qber crosses threshold,
+        attack detected, key rejected, blocked, not in inbox), plus
+        websocket assertion variant; both scenario repeat 3 seeds.
+  DEPS : B36.
+  DONE : scenarios BOTH pass deterministically.
+
+--------------------------------------------------------------------------------
+B38 - BACKEND FINAL VALIDATION
+  runs : full Suite (B36+B37) + lint/types + OpenAPI export; verify
+        Section 21 matrix cells that are backend-owned; demo scripts
+        (Section 24) executed against a fresh DB; audit trail complete;
+        performance sanity (p95 < 1s core endpoints); open issues list;
+        handoff note to frontend agent with snapshot of openapi.json.
+  DEPS : everything.
+  DONE : all backend matrix cells checked; demos green.
+===============================================================================
+================================================================================
+SECTION 19 - API CONTRACT (REST /api/v1)
+================================================================================
+Conventions: JSON; snake_case; Authorization header Bearer <access_jwt>;
+error envelope {code, message, details}; pagination {items,total,page,limit};
+timestamps UTC ISO-8601. Every endpoint below appears in openapi.json and is
+binding for Track A data hooks.
+
+================================================================================
+19.1 AUTH / USERS
+--------------------------------------------------------------------------------
+POST /api/v1/auth/register
+  AUTH : none    ROLE : public    PURPOSE: register USER + generate QSC ID.
+  REQ  : {name: str 2..80, email: str email, password: str min 8}
+  RESP : 201 {user: {id, name, email, unique_user_id, role: "USER"}}
+  ERR  : 409 EMAIL_TAKEN | 422 VALIDATION_ERROR | 429 RATE_LIMITED
+  STATE: none (no session); user row created.
+  DB   : users insert; audit register.
+
+POST /api/v1/auth/login
+  AUTH: none    ROLE: public    PURPOSE: obtain JWT pair.
+  REQ  : {email, password}
+  RESP : 200 {access_token, refresh_token, token_type: bearer,
+              expires_in, user: {id, name, unique_user_id, role}}
+  ERR  : 401 INVALID_CREDENTIALS | 403 USER_DISABLED | 429 RATE_LIMITED
+  DB  : refresh_tokens insert (hashed); audit login.
+
+POST /api/v1/auth/refresh
+  AUTH: body token    PURPOSE: rotate expiring access token.
+  REQ  : {refresh_token}
+  RESP : 200 {access_token, refresh_token, expires_in}
+  ERR  : 401 TOKEN_INVALID | 401 TOKEN_REUSED (reuse revokes the pair)
+  DB  : refresh_tokens rotate; audit.
+
+POST /api/v1/auth/logout
+  AUTH: Bearer    ROLE: any    PURPOSE: revoke active refresh token.
+  REQ  : {refresh_token?}
+  RESP : 204
+  DB  : refresh_tokens revoke; audit logout.
+
+GET /api/v1/auth/me
+  AUTH: Bearer
+  ROLE: any
+  RESP: 200 {user}
+  ERR : 401 TOKEN_REQUIRED
+  DB  : users read (session restore on refresh).
+
+GET /api/v1/users/search?qsc_id=QSC-XXXXXXXXXX
+  AUTH: Bearer
+  ROLE: USER
+  PURPOSE: receiver lookup by public QSC id.
+  RESP: 200 {user: {id, name, unique_user_id}}   (public profile only)
+  ERR : 404 USER_NOT_FOUND | 422 INVALID_QSC_FORMAT | 429 RATE_LIMITED
+  DB  : users index read on unique_user_id.
+
+PATCH /api/v1/users/me [TBD]
+  AUTH : Bearer   ROLE: USER   REQ: {name}
+  RESP: 200 {user}   ERR: 422 VALIDATION_ERROR.
+
+QSC ID server-side validation regex: ^QSC-[A-Z0-9]{10}$ applied to
+registration generation (B9) and search input; IDs never in logs.
+
+--------------------------------------------------------------------------------
+POST /api/v1/messages
+  AUTH : Bearer   ROLE : USER   PURPOSE : create message and start the
+         secure pipeline (AI recommendation then QKD then security).
+  REQ  : {receiver_qsc_id: str, content: str 1..2000,
+          security_requirement: LOW|MEDIUM|HIGH default MEDIUM}
+  RESP : 202 {message_id, communication_id, status: CREATED,
+              message: "accepted for secure processing"}
+  ERR  : 404 USER_NOT_FOUND | 409 SELF_DELIVERY | 422 CONTENT_TOO_LONG
+  STATE: CREATED then RECEIVER_VERIFIED during the post-create pipeline.
+  DB  : messages insert; communication_sessions insert; audit.
+
+GET /api/v1/messages/inbox
+  AUTH : Bearer   ROLE : USER receiver  PURPOSE: list delivered/read only.
+  RESP : {items: [{id, sender: {id,name}, protocol, qber, key_status,
+          status, attack_detected, created_at, read_at}], total, page, limit}
+  LOGIC: where receiver_id=me AND status IN (DELIVERED, READ).
+  NOTE : blocked rows excluded by query contract (B25).
+
+GET /api/v1/messages/sent
+  AUTH : sender
+  RESP : same row shape; ALL statuses; blocked rows flagged true.
+
+GET /api/v1/messages/{id}
+  AUTH : Bearer   ROLE : USER   PURPOSE : read (decrypt) or inspect.
+  RESP : 200 {id, sender, receiver, content, protocol, qber, key_status,
+             status, attack_detected, created_at, read_at}
+  RULE : content only when requester is receiver (or sender) AND status in
+         (DELIVERED, READ); decryption inside B19 only.
+  STATE: DELIVERED -> READ on first open (read_at set).
+  ERR  : 403 FOREIGN_MESSAGE | 404 MESSAGE_NOT_FOUND | 409 KEY_REJECTED
+
+GET /api/v1/messages/{id}/security-report
+  AUTH: owner
+  RESP: 200 {report: {message_id, protocol, qber, threshold,
+         attack_detected, key_status, encryption_status, delivery_status,
+         created_at}}
+  ERR : 404 REPORT_NOT_FOUND
+================================================================================
+19.2 COMMUNICATION SESSIONS / AI / QKD / SECURITY
+--------------------------------------------------------------------------------
+GET /api/v1/communications/{id}
+  AUTH : Bearer   ROLE : USER owner (sender or receiver)
+  PURPOSE: full session status for the live UI.
+  RESP : 200 {id, sender: {id,name}, receiver: {id,name}, protocol,
+          session_status, message_status, key_status, qber, attack_detected,
+          created_at, completed_at}
+  ERR  : 404 COMMUNICATION_NOT_FOUND | 403 FOREIGN_SESSION
+  DB   : sessions + latest qkd row read.
+
+GET /api/v1/communications?scope=mine|history
+  AUTH: USER
+  RESP: paginated own sessions (metadata) with statuses and qber.
+  ERR : 422 UNKNOWN_SCOPE.
+
+GET /api/v1/communications/active
+  AUTH: Bearer   ROLE: ATTACKER  PURPOSE: Eve target list.
+  RESP: {items: [{id, sender_name, receiver_name, protocol, session_state,
+         created_at}]}
+  LOGIC: sessions whose state in the attack window (Sec 14.1).
+  SEC  : metadata only; no ciphertext/keys/emails.
+
+GET /api/v1/communications/{id}/recommendation
+  AUTH: owner (or ADMIN monitor)
+  RESP: 200 {protocol, confidence, explanation, scores: {},
+             features: {}, evaluated_at}
+  ERR : 404 RECOMMENDATION_NOT_READY
+  STATE: ai.analysis events; PROTOCOL_SELECTED after it exists.
+
+GET /api/v1/communications/{id}/qkd
+  AUTH: owner; Eve gets metadata-only variant via /communications/active.
+  RESP: {runs: [{id, protocol, qubits_generated, matching_bases,
+         sifted_bits, compared_bits, errors, qber, threshold, key_status,
+         is_baseline, created_at}], latest_key_status}
+  RULE: never includes sifted key bits; sample transcript only via
+        optional ?include_sample=true limited to 32 rows [REC].
+
+GET /api/v1/communications/{id}/security
+  AUTH: owner
+  RESP: {decision: ACCEPTED|REJECTED|PENDING, key_status,
+         attack_detected, qber, threshold, evaluated_at}
+  LOGIC: single authoritative SecurityEngine output.
+
+GET /api/v1/communications/{id}/timeline [REC]
+  PURPOSE: replay events for F10 timeline bootstrapping.
+  RESP: {events: [{type, state, previous_state, timestamp}]} cap 500.
+
+--------------------------------------------------------------------------------
+19.3 ATTACKS / REPORTS / HISTORY / EVE
+--------------------------------------------------------------------------------
+POST /api/v1/communications/{id}/attacks
+  AUTH : Bearer   ROLE : ATTACKER  PURPOSE: launch simulated attack.
+  REQ  : {attack_type: "INTERCEPT_AND_RESEND", attack_strength: 0.1..1.0}
+  RESP : 201 {attack_id, communication_id, attack_type, attack_strength,
+          states_intercepted, states_modified, qber_before, qber_after,
+          detection_status, session_state}
+  ERR  : 409 ATTACK_WINDOW_CLOSED | 422 INVALID_ATTACK_TYPE |
+         403 ROLE_FORBIDDEN | 429 RATE_LIMITED
+  STATE: current window state -> ATTACK_DETECTED -> KEY_REJECTED -> BLOCKED
+         (or back into the flow when NOT_DETECTED).
+  DB   : attacks insert; qkd_sessions insert (is_baseline=false); message
+         status update; audit.
+
+GET /api/v1/attacks/{id}
+  AUTH: ATTACKER (own) | ADMIN
+  RESP: full attack row minus secrets.
+  ERR: 404 ATTACK_NOT_FOUND | 403.
+
+GET /api/v1/attacks/history
+  AUTH: ATTACKER own attacks list, paginated, desc.
+  RESP: {items: [attack rows as above], total, page, limit}
+
+GET /api/v1/eve/dashboard/summary
+  AUTH: ATTACKER
+  RESP: {active_sessions, total_attacks, detected_attacks,
+         detection_rate}
+  NOTE: computed live from DB counts (never hard-coded).
+
+GET /api/v1/reports/security   (user reports list)
+  AUTH: USER owner of messages
+  RESP: {items: [report rows for own messages], total, page, limit}
+
+GET /api/v1/communications/history [REC alias of scope=history]
+  AUTH: USER
+  RESP: session history list (see 19.2).
+================================================================================
+19.4 DASHBOARD / ADMIN / ANALYTICS / AUDIT
+--------------------------------------------------------------------------------
+GET /api/v1/dashboard/summary
+  AUTH : Bearer   ROLE : USER
+  RESP : {messages_sent, messages_received, messages_delivered,
+          messages_blocked, active_communications, attacks_on_mine,
+          average_qber, recent: [communications]}
+  NOTE : computed live from DB aggregates.
+
+GET /api/v1/admin/dashboard/summary
+  AUTH : Bearer   ROLE : ADMIN
+  RESP : {total_users, active_communications, messages_delivered,
+          messages_blocked, attacks_total, attacks_detected,
+          attack_detection_rate, average_qber, communications_per_day:
+          [{date, count}]}
+
+GET /api/v1/admin/users?search=&page=&limit=
+  AUTH: ADMIN    RESP: paginated users (NO password_hash, NO email for
+  ATTACKER/REC rows? keep email for admin visibility) - decision: admin may
+  see email, never hash.
+
+PATCH /api/v1/admin/users/{id}
+  AUTH: ADMIN   REQ: {is_active: bool}
+  ERR : 409 ADMIN_CANNOT_DISABLE_SELF | 404 USER_NOT_FOUND
+  DB  : users.is_active; audit.
+
+POST /api/v1/admin/attackers
+  AUTH: ADMIN
+  REQ : {name, email, password}
+  RESP: 201 {user: {id, name, email, role: ATTACKER}}
+  ERR : 409 EMAIL_TAKEN
+
+GET /api/v1/admin/attackers
+  AUTH: ADMIN   RESP: {attackers: [{id, name, email, is_active}]}
+
+PATCH /api/v1/admin/attackers/{id}
+  REQ : {is_active?} RESP: attacker row; audit.
+
+GET /api/v1/admin/security-events
+  AUTH: ADMIN  RESP: {items: [{communication_id, protocol, qber, threshold,
+         key_status, attack_detected, verdict, created_at}]}
+  LOGIC: security_reports + attacks joined; live via WS on top.
+
+GET /api/v1/admin/protocol-analytics
+  AUTH: ADMIN  RESP: {protocols: [{name, sessions, avg_qber, acceptance_rate,
+         attacks, avg_confidence}], by_day: [...]}
+
+GET /api/v1/admin/audit-logs
+  AUTH: ADMIN  REQ: none; filters user_id/action/date; RESP: paginated rows.
+
+GET /api/v1/admin/communications
+  AUTH: ADMIN  RESP: platform session list with role meta.
+
+GET /api/v1/protocols
+  AUTH: any authenticated
+  RESP: [{name, supported: bool, default_threshold}]  (registry truth)
+
+--------------------------------------------------------------------------------
+19.4 ERROR CODE CATALOG (frontend maps these)
+--------------------------------------------------------------------------------
+Primary codes: VALIDATION_ERROR(422), UNAUTHORIZED(401), TOKEN_REQUIRED(401),
+INVALID_CREDENTIALS(401), TOKEN_INVALID(401), TOKEN_REUSED(401),
+USER_NOT_FOUND(404), EMAIL_TAKEN(409), USER_DISABLED(403), QSC_NOT_FOUND(404),
+INVALID_QSC_FORMAT(422), SELF_DELIVERY(409), CONTENT_TOO_LONG(422),
+MESSAGE_NOT_FOUND(404), FOREIGN_MESSAGE(403), COMMUNICATION_NOT_FOUND(404),
+FOREIGN_SESSION(403), INVALID_STATE_TRANSITION(409), ATTACK_WINDOW_CLOSED(409),
+INVALID_ATTACK_TYPE(422), KEY_REJECTED(409), REPORT_NOT_FOUND(404),
+ADMIN_CANNOT_DISABLE_SELF(409), ROLE_FORBIDDEN(403), RATE_LIMITED(429),
+DATABASE_ERROR(500), INTERNAL_ERROR(500), PROTOCOL_NOT_SUPPORTED(501).
+Frontend must render a stable message for every code and a generic fallback
+for unknown ones (F32).
+================================================================================
+SECTION 20 - WEBSOCKET CONTRACT
+================================================================================
+Transport: ws(s)://host/ws/... with ?token=<access_jwt> on connect. Server
+validates JWT + role; rejects otherwise (close code 4401). Message envelope
+(server -> client) is exactly:
+  {"type": "event.type", "communication_id": 12 | null,
+   "state": "<STATE>", "actor_role": "USER|ATTACKER|ADMIN|SYSTEM",
+   "payload": {...}, "timestamp": "2026-08-22T10:15:00Z"}
+Client -> server: {"action": "ping|unsubscribe_communication", ...}
+Server heartbeats every 30s -> ping frame; client replies pong.
+
+CHANNELS
+  /ws/user/events            audience USER + ADMIN (user dashboard)
+  /ws/communications/{id}    audience sender + receiver + ADMIN;
+                             metadata-only for that session
+  /ws/eve/events             audience ATTACKER (active sessions feed)
+  /ws/admin/events           audience ADMIN (platform feed)
+
+EVENTS (type names are stable identifiers; payloads are documented)
+  communication.created      MUST HAVE  payload {communication_id, sender,
+                             receiver, created_at} -> user/eve/admin
+  communication.receiver_verified REQUIRED payload {receiver}
+  communication.state_changed MUST HAVE  {state, previous_state}
+  ai.analysis_started        RECOMMENDED
+  ai.protocol_selected       MUST HAVE  {protocol, confidence,
+                             explanation, scores}
+  qkd.started                MUST HAVE  {protocol, qubit_count}
+  qkd.progress               MUST HAVE  {percent, stage}
+  qkd.completed              MUST HAVE  {qubits_generated, matching_bases,
+                             sifted_bits, compared_bits, errors, qber}
+  qber.calculated            MUST HAVE  {qber, threshold}
+  security.check_started     RECOMMEND
+  security.key_accepted      MUST HAVE  {message_id}
+  security.key_rejected      MUST HAVE  {message_id, reason}
+  attack.started             MUST HAVE  {attack_id, communication_id,
+                             strength, states_intercepted}
+  attack.progress            MUST HAVE  {percent, states_modified}
+  attack.detected            MUST HAVE  {attack_id, qber_before, qber_after,
+                             detection_status}
+  message.encrypted          MUST HAVE  {message_id}
+  message.delivered          MUST HAVE  {message_id, receiver_id}
+  message.blocked            MUST HAVE  {message_id, reason}
+  message.read               MUST HAVE  {message_id, read_at}
+  audit.record               OPTIONAL   (admin channel only, throttled)
+  config.updated             OPTIONAL   (admin channel)
+================================================================================
+================================================================================
+SECTION 21 - FRONTEND/BACKEND INTEGRATION MATRIX
+================================================================================
+Columns: FEATURE | FRONTEND | API | BACKEND SERVICE | DATABASE | WEBSOCKET |
+STATUS. STATUS starts PLAN and flips to READY only when both tracks pass
+cross-checks (F37/B38 runs against each other).
+
+FEATURE: Registration
+  FT: F3 register form       API: POST /auth/register
+  BK: AuthService + QSC ID service (B9)   DB: users, audit_logs
+  WS: none   STATUS: PLAN
+
+FEATURE: Login / logout / refresh
+  FT: F3 + interceptor       API: /auth/login /refresh /logout
+  BK: AuthService   DB: refresh_tokens [REC]   WS: none   STATUS: PLAN
+
+FEATURE: Role routing and guards
+  FT: F4                    API: GET /auth/me
+  BK: Authorization (B7)   DB: users.role   WS: none   STATUS: PLAN
+
+FEATURE: QSC ID generation and display
+  FT: F6 (chip) + register banner   API: register response
+  BK: QSC ID service B9   DB: users.unique_user_id   STATUS: PLAN
+
+FEATURE: User search
+  FT: F7   API: GET /users/search   BK: UserService B10
+  DB: users unique index   WS: none   STATUS: PLAN
+
+FEATURE: Send secure message
+  FT: F8 wizard   API: POST /messages
+  BK: MessagingService B11 + SessionService B12
+  DB: messages, communication_sessions   WS: communication.created
+  STATUS: PLAN
+
+FEATURE: Communication session view
+  FT: F9   API: GET /communications/{id}   BK: SessionService B12,
+  StateMachine B13   DB: sessions   WS: communication.state_changed
+  STATUS: PLAN
+
+FEATURE: AI recommendation
+  FT: F11 panel   API: GET /communications/{id}/recommendation
+  BK: AIRecommendationService B20   DB: ai_recommendations [REC]
+  WS: ai.analysis_started / ai.protocol_selected   STATUS: PLAN
+
+FEATURE: QKD visualization
+  FT: F12   API: GET /communications/{id}/qkd
+  BK: QKDService B15 + BB84 engine B14   DB: qkd_sessions
+  WS: qkd.started/progress/completed   STATUS: PLAN
+
+FEATURE: QBER and security panel
+  FT: F13   API: GET /communications/{id}/security
+  BK: SecurityEngine B17 + QBER engine B16   DB: qkd_sessions, messages
+  WS: qber.calculated / security.key_*   STATUS: PLAN
+
+FEATURE: Encryption and transmission status
+  FT: F14   API: GET /messages/{id}   BK: EncryptionService B19
+  DB: messages ciphertext   WS: message.encrypted/delivered   STATUS: PLAN
+
+FEATURE: Inbox (receiver)
+  FT: F15   API: GET /messages/inbox   BK: DeliveryService B26 + B25 exclusion
+  DB: messages   WS: message.delivered/read   STATUS: PLAN
+
+FEATURE: Sent messages
+  FT: F16   API: GET /messages/sent   BK: DeliveryService B26
+  DB: messages   WS: message.blocked/delivered   STATUS: PLAN
+
+FEATURE: Communication history
+  FT: F17   API: GET /communications?scope=history   BK: History B28
+  DB: sessions   WS: communication.state_changed   STATUS: PLAN
+
+FEATURE: Security reports
+  FT: F18   API: GET /messages/{id}/security-report   BK: Reporting B27
+  DB: security_reports   WS: security.* target refresh   STATUS: PLAN
+
+FEATURE: Eve login / dashboard / active targets
+  FT: F19/F20/F21   API: /auth/login, /eve/dashboard/summary,
+      /communications/active   BK: AttackerService B22
+  DB: users (ATTACKER), attacks   WS: /ws/eve/events   STATUS: PLAN
+
+FEATURE: Attack configuration / execution / result
+  FT: F22/F23/F24   API: POST /communications/{id}/attacks,
+      GET /attacks/{id}   BK: AttackSimulation B23 + Detection B24
+  DB: attacks, qkd_sessions   WS: attack.started/progress/detected,
+      qber.calculated   STATUS: PLAN
+
+FEATURE: Eve attack history
+  FT: F25   API: GET /attacks/history   BK: B29
+  DB: attacks   WS: none   STATUS: PLAN
+
+FEATURE: Admin dashboard / users / attackers
+  FT: F26/F27   API: /admin/dashboard/summary, /admin/users, /admin/attackers
+  BK: AdminService B30   DB: users + aggregates   WS: /ws/admin/events
+  STATUS: PLAN
+
+FEATURE: Security monitoring
+  FT: F28   API: /admin/security-events   BK: AdminService B30 + B17
+  DB: security_reports, attacks   WS: security.* + attack.*   STATUS: PLAN
+
+FEATURE: Protocol analytics
+  FT: F29   API: /admin/protocol-analytics   BK: Analytics B31
+  DB: qkd_sessions, attacks, ai_recommendations   WS: qkd.completed
+  STATUS: PLAN
+
+FEATURE: Audit logs
+  FT: F30   API: /admin/audit-logs   BK: AuditService B32
+  DB: audit_logs   WS: audit.record (OPTIONAL)   STATUS: PLAN
+
+FEATURE: Real-time live views
+  FT: F10 + F31 wsClient   Channels: user/eve/admin/communications
+  BK: RealtimeService B33   DB: session_state   STATUS: PLAN
+
+FEATURE: Load/empty/error/responsive/accessibility polish
+  FT: F32-F35   no API   STATUS: PLAN
+
+FEATURE: End-to-end demo validation
+  FT: F36-F37 + B37-B38 run demo scenarios (Section 24)
+  STATUS: PLAN
+
+CONTRACT GOVERNANCE: backend exports docs/openapi.json; any schema change
+bumps the contract version and is communicated to Track A before integration
+windows. ER for 'openapi.json' is the single source for typed clients.
+$p = 'C:\Users\smsbh\Desktop\quantam\QSC_MASTER_DEVELOPMENT_PHASES.txt'; $x = @'
+================================================================================
+SECTION 22 - SECURITY CHECKLIST
+================================================================================
+Item | Owner | Where | Verify. Every item maps to tests in B35/B36.
+
+S1  Password hashing          B6     users.password_hash (bcrypt, cost 12+)
+S2  JWT security              B6/B35 secret env, HS256, exp+iat+jti, rotation
+S3  Role-based access         B7     require_roles on every route
+S4  API authorization         B7     ownership checks beyond roles
+S5  Input validation          B34     Pydantic strict, extra=forbid
+S6  User ID (QSC) validation  B9/B10  regex + unique index + retry
+S7  Message access control    B11/B26 owner-only read/decrypt
+S8  Eve access restrictions   B22/B14.3 metadata-only schemas + 403
+S9  Admin authorization       B30     ADMIN role gates + audit
+S10 Secret/key protection     B18     keys encrypted at rest, never in API
+S11 Encryption                 B19     AES-GCM only, standard library
+S12 Database protection        B3/B35  parameterized queries, no cascade
+                                       destructive deletes
+S13 Environment secrets        B2      no secrets in code; .env.gitignored
+S14 CORS                       B1/B35  allowlist from env
+S15 Rate limiting              B35     auth 5/min, search 10/min, attack 3/min
+S16 Audit logging              B32     every auditable action recorded
+S17 Safe error messages        B34     user-safe envelope; internal logs only
+S18 No sensitive leakage             every response model checked by tests
+S19 No secret keys to frontend        integration test asserts no key field
+S20 Message access control           receiver/sender ownership enforced
+S21 Blocked message marking    B25     never in inbox; flagged in sent
+S22 XSS/HTML                  F32     React escapes by default; avoid raw HTML
+S23 Clickjacking                   security headers middleware
+S24 Token storage           F3     localStorage + logout clear; XSS-aware
+
+SEMANTIC GUARANTEES (blocking criteria)
+  - Eve cannot read any message plaintext, ciphertext, or key.
+  - Eve cannot reorder/alter protocol config (protocol_configs is admin only).
+  - No API response for any role includes sifted key bits or derived keys.
+  - Blocked messages never appear delivered.
+
+================================================================================
+SECTION 23 - TESTING STRATEGY
+================================================================================
+23.1 UNIT TESTS (backend pytest / frontend vitest)
+  - Authentication: hashing verify, token issue/verify/expiry, refresh
+    rotation, disabled user denial.
+  - QSC ID: format, uniqueness (seeded 1000), collision retry.
+  - BB84: known-answer vectors, basis matching distribution, noiseless
+    == expected ratio; deterministic on seed.
+  - QBER: 0..1 boundaries; zero-denominator guard.
+  - Security decisions: qber<=t accepted, >t rejected, downgrade rules.
+  - Encryption/decryption: round-trip, tamper detection, nonce uniqueness.
+  - AI recommendation: score math, confidence bounds, invariant test.
+  - Eve attack: rerun determinism, qber_after >= qber_before, strength
+    effect monotonicity.
+  - Visibility: schema-level tests (Eve responses contain no sensitive keys).
+
+23.2 INTEGRATION / API TESTS (httpx AsyncClient + test DB)
+  - Registration -> login -> me (JWT flow).
+  - Login -> role routing (each role's allowed scope).
+  - User search by QSC ID (found/not found/invalid).
+  - Send message -> session created -> recommendation -> executed protocol
+    equality -> QKD run -> QBER -> security -> encrypted -> delivered -> read.
+  - Attack flow: eve lists, attacks, qber changes, detected, key rejected,
+    blocked, inbox absence.
+  - Reports and history equality with source rows.
+  - Audit rows presence for critical actions.
+  - WebSocket: connect auth, event audience routing, disconnect cleanup.
+
+23.3 END-TO-END DEMO SCRIPT (Section 24) - deterministic seeded runs; three
+     repeats to guard randomness.
+
+23.4 COVERAGE GATES
+  - Backend: critical modules >= 80% lines (auth, session, cc, security,
+    attacks); overall >= 70%.
+  - Frontend: key flows >= 70% branches via component tests + Playwright.
+
+23.5 CI PIPELINE (all pushes, both tracks)
+  - backend: lint (ruff), mypy, pytest, cov, alembic check.
+  - frontend: lint, tsc, vitest, build, a11y scan (axe), Playwright e2e
+    against live backend instance.
+================================================================================
+SECTION 24 - FINAL DEMO SCENARIOS
+================================================================================
+Executable headlessly (backend B37 + frontend F37) or manually with three
+browser windows. Each demo asserts backend persisted results; the UI must
+show exactly what the backend reports.
+
+SCENARIO A - NORMAL SECURE COMMUNICATION (Alice to Bob)
+ 1. Alice registers ........................ POST /auth/register (user A)
+ 2. Alice logs in ......................... POST /auth/login -> JWT
+ 3. Unique QSC ID shown ................... register response + profile
+ 4. Alice searches Bob .................... GET /users/search?qsc_id=B
+ 5. Alice composes message ................. POST /messages {Bob qsc id}
+ 6. AI recommends protocol ................. GET recommendation -> BB84
+ 7. QKD visualization ...................... WS qkd.* + GET .../qkd
+ 8. QBER within threshold .................. qber <= 0.11 (sim threshold)
+ 9. Key accepted ........................... security.key_accepted event
+10. Message encrypted ...................... messages row ciphertext set
+11. Bob inbox shows the message ............ GET /messages/inbox
+12. Bob decrypts and reads ................. GET /messages/{id} -> READ
+ASSERT: session final state READ; report DELIVERED; audit present.
+
+SCENARIO B - EAVESDROPPING DETECTED AND BLOCKED
+13. Eve logs in ........................... attacker creds (admin-created)
+14. Eve sees active communication ......... GET /communications/active
+15. Eve launches INTERCEPT_AND_RESEND ..... POST .../communications/{id}/attacks
+16. QBER changes (baseline run vs rerun) ... qkd rows is_baseline false
+17. Attack detected ....................... attack.detected WS event
+18. Key rejected .......................... security.key_rejected
+19. Message blocked ....................... message BLOCKED; no inbox row
+20. Security report generated ............. report key_status REJECTED
+ASSERT: Bob inbox does NOT contain the blocked message; sent view shows
+BLOCKED; admin sees detection in /admin/security-events.
+
+SCENARIO C - ADMIN MONITORING OVERVIEW
+Admin logs in, opens dashboard, sees the stats from scenarios A and B in
+real time; protocol analytics shows BB84 usage; audit log contains the
+full trail (register, login, search, message.create, recommend, qkd.run,
+qber, accept/reject, attack, block, deliver, read).
+================================================================================
+SECTION 25 - GLOBAL DEFINITION OF DONE
+================================================================================
+The project is COMPLETE only when (checked against Section 21 matrix):
+
+[ ] Registration works (user created, hashed password, audit row)
+[ ] Login works (JWT pair, refresh, logout)
+[ ] Unique QSC IDs work (format, uniqueness, no reuse)
+[ ] Role-based access works end-to-end (guards + backend 403 matrix)
+[ ] User search works by QSC ID (found/not-found/invalid)
+[ ] Secure messaging works (compose -> session -> inbox)
+[ ] Communication sessions work (lifecycle rows, statuses)
+[ ] State machine works (all legal edges, all illegal rejected)
+[ ] AI recommendation works dynamically (scores/confidence from inputs)
+[ ] Recommended protocol is actually executed (invariant test green)
+[ ] BB84 works correctly (known answers, deterministic)
+[ ] QBER is calculated from actual simulation data
+[ ] Key acceptance/rejection works (threshold rule)
+[ ] Encryption/decryption works (AES-GCM, no plaintext at rest)
+[ ] Eve attack simulation works (params, rerun, impact)
+[ ] Attack changes simulation results (qber_after > qber_before)
+[ ] Attack detection works (DETECTED/NOT_DETECTED audited)
+[ ] Blocked messages are not delivered (inbox exclusion tested)
+[ ] Inbox works (delivered only, read tracking)
+[ ] History works (sent/received/communications + eve + admin)
+[ ] Security reports work (both paths, owner-scoped)
+[ ] Admin dashboard works (live aggregates)
+[ ] Audit logs work (critical actions present)
+[ ] Real-time updates work (WS channels per audience)
+[ ] Frontend connected to backend (integration matrix 100%)
+[ ] No fake/static production data in any dashboard
+[ ] Tests pass (unit/integration/e2e, coverage gates)
+[ ] Error handling works (envelope codes; no stack leakage)
+[ ] Security controls pass Section 22 checklist
+[ ] Final demo scenarios (Section 24) pass end-to-end
+================================================================================
+SECTION 26 - FINAL COMPLETION CHECKLIST (sign-off gate)
+================================================================================
+Gate A - ENGINEERING
+ 1. Both repos build clean (npm run build / pytest + mypy).
+ 2. openapi.json exported; typed clients regenerate without diff.
+ 3. All 75 phases have their DONE criteria satisfied.
+ 4. Coverage gates met (Section 23.4).
+ 5. No console errors; no 4xx storms in demo; rate limits sane.
+Gate B - SECURITY
+ 6. Section 22 items S1-S24 all verified by tests.
+ 7. Eve cannot read messages/keys - demonstrated in scenario B.
+ 8. No key material in any API/WS payload - grep test green.
+ 9. Secrets only in .env; .env not committed.
+Gate C - INTEGRATION
+10. Two separate agents (Track A/Track B) merged with zero contract drift.
+11. Every row in Section 21 matrix flips to READY.
+12. Blocked messages never appear in any receiver inbox (demo B).
+Gate D - DELIVERY
+13. Demo scripts A/B/C pass on a fresh database (seeded admin/eve only).
+14. README documents seeding, env vars, and demo scripts.
+15. Repo includes .env.example, migration history, openapi.json.
+16. Handoff summary lists open issues (with severity) or states none.
+
+SIGN-OFF: project is COMPLETE when all boxes in Sections 25 and 26 are
+checked and the demo scenarios pass on a machine started from scratch.
+================================================================================
+END OF QSC_MASTER_DEVELOPMENT_PHASES

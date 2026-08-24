@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+*.db
+*.sqlite
+dist/
+.coverage
+htmlcov/
+docs/openapi.json.bak

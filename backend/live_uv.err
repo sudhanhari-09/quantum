@@ -1,0 +1,127 @@
+INFO:     Started server process [25692]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 422, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\uvicorn\middleware\proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\fastapi\applications.py", line 1163, in __call__
+    await super().__call__(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\app\main.py", line 54, in request_context_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\middleware\cors.py", line 96, in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\middleware\cors.py", line 154, in simple_response
+    await self.app(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\routing.py", line 670, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 2734, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1780, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 2789, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1800, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 1279, in handle
+    await app(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 158, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 144, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 706, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\fastapi\routing.py", line 354, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\starlette\concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\anyio\to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 2641, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 1033, in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\app\core\ratelimit.py", line 69, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\app\api\routers\auth.py", line 30, in register
+    return {"user": UserPrivate.model_validate(user)}
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\smsbh\Desktop\quantam\backend\.venv\Lib\site-packages\pydantic\main.py", line 732, in model_validate
+    return cls.__pydantic_validator__.validate_python(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for UserPrivate
+email
+  value is not a valid email address: The part after the @-sign is a special-use or reserved name that cannot be used with email. [type=value_error, input_value='final.cors@qsc.test', input_type=str]
+INFO:     127.0.0.1:51325 - "WebSocket /ws/user/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMCIsInJvbGUiOiJVU0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NDMxMSwiZXhwIjoxNzg3NTg2MTExLCJqdGkiOiIxYTk4NzBiMTRlYTE0NWVjOWFkMjlkODIzZjk4NDM3ZiJ9.KvNPjbQ__FrTVgZMS5GNs8KFjVM0Z0anI0C_DnrE2E4" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:50389 - "WebSocket /ws/user/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMCIsInJvbGUiOiJVU0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NDM2MCwiZXhwIjoxNzg3NTg2MTYwLCJqdGkiOiI2OWM0ZjA4YzM3OGU0ZTQ3YjM1NDlkNjlhYjVhMDA3MiJ9.p-go6_bx3bc1y5cVmn4z_YhSZfAih6J8gE-4ylk3N2A" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:55551 - "WebSocket /ws/user/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMSIsInJvbGUiOiJVU0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NDQzNSwiZXhwIjoxNzg3NTg2MjM1LCJqdGkiOiI1ODAyMzRmYjdjNTI0OTJmODYxY2UwOTVlMjYwM2I3YyJ9.qrBGTURqCpfRGkhlYtqUF1jSQVHITQMyvUGpKcyghLQ" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:56394 - "WebSocket /ws/user/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMCIsInJvbGUiOiJVU0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NDQ4MSwiZXhwIjoxNzg3NTg2MjgxLCJqdGkiOiI1YjVlYjMyYTU3YTc0NWU5YWJlMTIyNTMyOTA2ZjhjNiJ9.qzROk-CkoDeDakRqCi2fj2RGDU2osu0G7exwnetychY" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:57016 - "WebSocket /ws/user/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMCIsInJvbGUiOiJVU0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NDQ4MSwiZXhwIjoxNzg3NTg2MjgxLCJqdGkiOiI1YjVlYjMyYTU3YTc0NWU5YWJlMTIyNTMyOTA2ZjhjNiJ9.qzROk-CkoDeDakRqCi2fj2RGDU2osu0G7exwnetychY" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:53584 - "WebSocket /ws/user/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMCIsInJvbGUiOiJVU0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NDQ4MSwiZXhwIjoxNzg3NTg2MjgxLCJqdGkiOiI1YjVlYjMyYTU3YTc0NWU5YWJlMTIyNTMyOTA2ZjhjNiJ9.qzROk-CkoDeDakRqCi2fj2RGDU2osu0G7exwnetychY" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:60059 - "WebSocket /ws/admin/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6IkFETUlOIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NDkyOCwiZXhwIjoxNzg3NTg2NzI4LCJqdGkiOiI1ODY1NzJmY2QzZTA0MzMxOWRjZjlkNTRkNDg3NGU3ZiJ9.oFnY9L1zm7srpsWJ7P8L_e58eXTClwnyv_L8DD4lrng" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:55216 - "WebSocket /ws/user/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6IkFETUlOIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NDkyOCwiZXhwIjoxNzg3NTg2NzI4LCJqdGkiOiI1ODY1NzJmY2QzZTA0MzMxOWRjZjlkNTRkNDg3NGU3ZiJ9.oFnY9L1zm7srpsWJ7P8L_e58eXTClwnyv_L8DD4lrng" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:49203 - "WebSocket /ws/admin/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6IkFETUlOIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NDkyOCwiZXhwIjoxNzg3NTg2NzI4LCJqdGkiOiI1ODY1NzJmY2QzZTA0MzMxOWRjZjlkNTRkNDg3NGU3ZiJ9.oFnY9L1zm7srpsWJ7P8L_e58eXTClwnyv_L8DD4lrng" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:49186 - "WebSocket /ws/user/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6IkFETUlOIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NDkyOCwiZXhwIjoxNzg3NTg2NzI4LCJqdGkiOiI1ODY1NzJmY2QzZTA0MzMxOWRjZjlkNTRkNDg3NGU3ZiJ9.oFnY9L1zm7srpsWJ7P8L_e58eXTClwnyv_L8DD4lrng" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:64655 - "WebSocket /ws/eve/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwicm9sZSI6IkFUVEFDS0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NTE5NSwiZXhwIjoxNzg3NTg2OTk1LCJqdGkiOiIyZDI5MTJiMGJiMDY0YzNmYTM4NGU0OGJhNzMxZjY4MyJ9.L-pr59HP-iYABUKUs3C5S2uNGHBjfiUYwt7TMsLJzUc" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:62364 - "WebSocket /ws/eve/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwicm9sZSI6IkFUVEFDS0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NTE5NSwiZXhwIjoxNzg3NTg2OTk1LCJqdGkiOiIyZDI5MTJiMGJiMDY0YzNmYTM4NGU0OGJhNzMxZjY4MyJ9.L-pr59HP-iYABUKUs3C5S2uNGHBjfiUYwt7TMsLJzUc" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:53392 - "WebSocket /ws/eve/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwicm9sZSI6IkFUVEFDS0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NTE5NSwiZXhwIjoxNzg3NTg2OTk1LCJqdGkiOiIyZDI5MTJiMGJiMDY0YzNmYTM4NGU0OGJhNzMxZjY4MyJ9.L-pr59HP-iYABUKUs3C5S2uNGHBjfiUYwt7TMsLJzUc" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:59931 - "WebSocket /ws/eve/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwicm9sZSI6IkFUVEFDS0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NTE5NSwiZXhwIjoxNzg3NTg2OTk1LCJqdGkiOiIyZDI5MTJiMGJiMDY0YzNmYTM4NGU0OGJhNzMxZjY4MyJ9.L-pr59HP-iYABUKUs3C5S2uNGHBjfiUYwt7TMsLJzUc" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:49800 - "WebSocket /ws/user/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMCIsInJvbGUiOiJVU0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NTI1NywiZXhwIjoxNzg3NTg3MDU3LCJqdGkiOiJhYWZmMTlhNWE5YTE0OGI4YWNiZmFiNGM1NjhiNzYzMCJ9.1pZWy_eBbVg32VTUk9c9DrxDQUiOEFSmep9V7VHyVwE" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:56668 - "WebSocket /ws/user/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMCIsInJvbGUiOiJVU0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NTI1NywiZXhwIjoxNzg3NTg3MDU3LCJqdGkiOiJhYWZmMTlhNWE5YTE0OGI4YWNiZmFiNGM1NjhiNzYzMCJ9.1pZWy_eBbVg32VTUk9c9DrxDQUiOEFSmep9V7VHyVwE" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:60185 - "WebSocket /ws/user/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMSIsInJvbGUiOiJVU0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzU4NTMwNSwiZXhwIjoxNzg3NTg3MTA1LCJqdGkiOiJmM2ViYTdhZDk2ZDE0MzQzYmQ2YzBiMzFhOTBiMDFkOSJ9.Ya79LAalxPRoLTVNQKgxyb5yEGvsC8NNHFz61OJdaA4" [accepted]
+INFO:     connection open

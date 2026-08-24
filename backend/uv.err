@@ -1,0 +1,6 @@
+INFO:     Started server process [8340]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:58836 - "WebSocket /ws/eve/events?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1Iiwicm9sZSI6IkFUVEFDS0VSIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc4NzUwNzE5OCwiZXhwIjoxNzg3NTA4OTk4LCJqdGkiOiI4NGRhN2JkZWNhN2Y0MGM1YjRiZGM5MjQzMDNhYWYxNiJ9.aridO-cKcSoAvCEplRNm4uTFDoix-Xp2Jrh8A1dh9P0" [accepted]
+INFO:     connection open
