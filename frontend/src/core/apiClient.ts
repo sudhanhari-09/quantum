@@ -6,13 +6,19 @@ import axios, {
 import { API_BASE } from "./config";
 import { useAuthStore } from "./authStore";
 import { messageForCode } from "./errors";
+import { expireSession, refreshSession } from "./session";
 import type { ApiErrorEnvelope } from "../types/api";
 
 interface RetriableConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
 }
 
-let refreshPromise: Promise<string | null> | null = null;
+/** Endpoints that must never trigger the refresh/retry loop. */
+const AUTH_ENDPOINTS = ["/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"];
+
+function isAuthEndpoint(url?: string): boolean {
+  return !!url && AUTH_ENDPOINTS.some((path) => url.includes(path));
+}
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE,
@@ -20,55 +26,35 @@ export const apiClient: AxiosInstance = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
+  // Always the newest token from the store (never a captured copy).
   const token = useAuthStore.getState().accessToken;
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
-
-async function requestRefresh(): Promise<string | null> {
-  const { refreshToken, setSession, user, clearSession } =
-    useAuthStore.getState();
-  if (!refreshToken) return null;
-  if (!refreshPromise) {
-    refreshPromise = axios
-      .post<{ access_token: string; refresh_token: string }>(
-        `${API_BASE}/auth/refresh`,
-        { refresh_token: refreshToken },
-      )
-      .then(({ data }) => {
-        if (user) setSession(user, data.access_token, data.refresh_token);
-        else useAuthStore.setState({ accessToken: data.access_token });
-        return data.access_token;
-      })
-      .catch(() => {
-        clearSession();
-        return null;
-      })
-      .finally(() => {
-        refreshPromise = null;
-      });
-  }
-  return refreshPromise;
-}
 
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<ApiErrorEnvelope>) => {
     const config = error.config as RetriableConfig | undefined;
     const status = error.response?.status;
+    const code = error.response?.data?.code;
 
-    if (
-      status === 401 &&
-      config &&
-      !config._retry &&
-      !config.url?.includes("/auth/refresh") &&
-      !config.url?.includes("/auth/login")
-    ) {
-      config._retry = true;
-      const token = await requestRefresh();
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-        return apiClient(config);
+    if (status === 401 && config && !isAuthEndpoint(config.url)) {
+      if (code === "TOKEN_REUSED") {
+        // The backend revoked the whole token family: retrying is pointless.
+        expireSession("reused");
+        return Promise.reject(normalizeError(error));
+      }
+      if (!config._retry) {
+        // Retry the ORIGINAL request exactly once, with the rotated token.
+        config._retry = true;
+        const token = await refreshSession();
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+          return apiClient(config);
+        }
+        // Refresh failed → expireSession() already ran (401/403) or the
+        // network is down (session intentionally kept).
       }
     }
 

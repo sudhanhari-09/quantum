@@ -1,7 +1,7 @@
 """communication_events + qkd sample_json
 
 Revision ID: 6b029071db87
-Revises: 097be7581625
+Revises: 0003_enable_all_protocols
 Create Date: 2026-08-23 14:32:32.212483
 """
 from alembic import op
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 
 
 revision = '6b029071db87'
-down_revision = '097be7581625'
+down_revision = '0003_enable_all_protocols'
 branch_labels = None
 depends_on = None
 

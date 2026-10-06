@@ -62,12 +62,15 @@ def create_app() -> FastAPI:
             "Content-Security-Policy", "frame-ancestors 'none'; default-src 'none'"
         )
         response.headers.setdefault("Referrer-Policy", "no-referrer")
+        # Log HTTP request in the new format: LEVEL  METHOD  PATH  STATUS
+        log_msg = f"{request.method}  {request.url.path}  {response.status_code}"
+        logger.info(log_msg)
         return response
 
     # ---- error envelope handlers -------------------------------------------
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-        logger.warning("app_error code=%s path=%s: %s", exc.code, request.url.path, exc.message)
+        logger.warning("%s  %s  %s  %s", request.method, request.url.path, exc.code, exc.message)
         return JSONResponse(
             status_code=exc.status_code,
             content=_envelope(exc.code, exc.message, exc.details),

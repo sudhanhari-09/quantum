@@ -51,6 +51,7 @@ class MessagingService:
         receiver_qsc_id: str,
         content: str,
         security_requirement: str = "MEDIUM",
+        protocol: str | None = None,
     ) -> tuple[Message, CommunicationSession]:
         receiver = self.users.get_by_qsc_id((receiver_qsc_id or "").strip().upper())
         if receiver is None:
@@ -99,6 +100,7 @@ class MessagingService:
         message: Message,
         plaintext: str,
         security_requirement: str = "MEDIUM",
+        user_protocol: str | None = None,
         stage_delay: float = 0.0,
         commit_each_stage: bool = False,
     ) -> None:
@@ -110,6 +112,10 @@ class MessagingService:
         commit_each_stage > makes every intermediate state VISIBLE to other
         connections immediately (required for the live attack window); the
         caller then owns final durability semantics.
+
+        user_protocol: if provided, the user manually selected this protocol
+        and it is used directly. AI recommendation is still recorded for
+        analytics but does NOT override the user's choice on the first run.
         """
         import time
 
@@ -124,27 +130,69 @@ class MessagingService:
             if commit_each_stage:
                 self.session.commit()
 
-        # ---- AI recommendation (B20) -------------------------------------------
-        dwell()
-        sm.transition(comm, "AI_ANALYZING")
-        _emit_and_record(self.session, ["user", "comm"], "ai.analysis_started",
-                         communication_id=comm.id, state="AI_ANALYZING")
+        # ---- Protocol selection (user manual or AI) ---------------------------
         recommender = AiRecommendationService(self.session)
-        rec = recommender.recommend(comm, security_requirement)
-        comm.protocol = rec.protocol  # INVARIANT: executed == recommended
-        message.protocol = rec.protocol
-        sm.transition(comm, "PROTOCOL_SELECTED")
-        _emit_and_record(self.session, ["user", "comm", "admin"], "ai.protocol_selected",
-                         communication_id=comm.id, state="PROTOCOL_SELECTED",
-                         payload={"protocol": rec.protocol,
-                                  "confidence": rec.confidence,
-                                  "explanation": rec.explanation,
-                                  "scores": rec.protocol_scores})
-        audit(self.session, "recommend",
-              f"communication {comm.id}: recommended {rec.protocol} "
-              f"(confidence {rec.confidence})", user_id=message.sender_id)
+        if user_protocol:
+            # User manually selected a protocol - use it directly
+            sm.transition(comm, "AI_ANALYZING")
+            _emit_and_record(self.session, ["user", "comm"], "ai.analysis_started",
+                             communication_id=comm.id, state="AI_ANALYZING")
+            dwell()
+            # Still record AI recommendation for analytics/history
+            rec = recommender.recommend(comm, security_requirement)
+            # Override with user's choice
+            comm.protocol = user_protocol
+            message.protocol = user_protocol
+            sm.transition(comm, "PROTOCOL_SELECTED")
+            _emit_and_record(self.session, ["user", "comm", "admin"], "ai.protocol_selected",
+                             communication_id=comm.id, state="PROTOCOL_SELECTED",
+                             payload={"protocol": user_protocol,
+                                      "confidence": rec.confidence,
+                                      "explanation": f"User selected {user_protocol}. AI scored: {rec.protocol}",
+                                      "scores": rec.protocol_scores,
+                                      "user_selected": True})
+            audit(self.session, "recommend",
+                  f"communication {comm.id}: user selected {user_protocol} (AI would pick {rec.protocol})",
+                  user_id=message.sender_id)
+        else:
+            # No user selection - AI picks the protocol
+            sm.transition(comm, "AI_ANALYZING")
+            _emit_and_record(self.session, ["user", "comm"], "ai.analysis_started",
+                             communication_id=comm.id, state="AI_ANALYZING")
+            dwell()
+            rec = recommender.recommend(comm, security_requirement)
+            comm.protocol = rec.protocol  # INVARIANT: executed == recommended
+            message.protocol = rec.protocol
+            sm.transition(comm, "PROTOCOL_SELECTED")
+            _emit_and_record(self.session, ["user", "comm", "admin"], "ai.protocol_selected",
+                             communication_id=comm.id, state="PROTOCOL_SELECTED",
+                             payload={"protocol": rec.protocol,
+                                      "confidence": rec.confidence,
+                                      "explanation": rec.explanation,
+                                      "scores": rec.protocol_scores,
+                                      "user_selected": False})
+            audit(self.session, "recommend",
+                  f"communication {comm.id}: recommended {rec.protocol} "
+                  f"(confidence {rec.confidence})", user_id=message.sender_id)
 
         # ---- QKD (B14/B15/B16) ---------------------------------------------------
+        self._run_qkd_and_complete(
+            message, plaintext, comm, sm, dwell, security_requirement, stage_delay, commit_each_stage
+        )
+
+    def _run_qkd_and_complete(
+        self,
+        message: Message,
+        plaintext: str,
+        comm: CommunicationSession,
+        sm,
+        dwell,
+        security_requirement: str = "MEDIUM",
+        stage_delay: float = 0.0,
+        commit_each_stage: bool = False,
+        retry_count: int = 0,
+    ) -> None:
+        """Execute QKD, security check, and handle adaptive retry on failure."""
         sm.transition(comm, "QKD_INITIALIZING")
         qkd = QkdService(self.session)
 
@@ -173,9 +221,10 @@ class MessagingService:
                                   "sifted_bits": baseline_row.sifted_bits,
                                   "compared_bits": baseline_row.compared_bits,
                                   "errors": baseline_row.errors,
-                                  "qber": baseline_row.qber})
+                                  "qber": baseline_row.qber,
+                                  "protocol": comm.protocol})
         audit(self.session, "qkd.run",
-              f"communication {comm.id}: BB84-style run protocol={baseline_row.protocol} "
+              f"communication {comm.id}: {comm.protocol} run "
               f"qber={baseline_row.qber}", user_id=message.sender_id)
 
         # ---- Security decision (B17) ----------------------------------------------
@@ -209,19 +258,29 @@ class MessagingService:
                   f"message {message.id} delivered to receiver",
                   user_id=message.sender_id)
         else:
-            message.attack_detected = True
-            _emit_and_record(self.session, ["user", "comm", "admin"], "security.key_rejected",
-                             communication_id=comm.id, state="KEY_REJECTED",
-                             payload={"message_id": message.id,
-                                      "reason": "qber above simulation threshold"})
-            _emit_and_record(self.session, ["user", "comm", "admin"], "message.blocked",
-                             communication_id=comm.id, state="BLOCKED",
-                             payload={"message_id": message.id,
-                                      "reason": "security check failed"})
-            audit(self.session, "block",
-                  f"message {message.id} blocked; key rejected "
-                  f"(qber={decision.qber} > threshold={decision.threshold})",
-                  user_id=message.sender_id)
+            # Security check failed - try adaptive retry with different protocol
+            if retry_count < 1:
+                # AI recommends a different protocol for retry
+                self._adaptive_retry(
+                    message, plaintext, comm, sm, engine, qkd,
+                    security_requirement, stage_delay, commit_each_stage,
+                    retry_count, baseline_row
+                )
+            else:
+                # Already retried once, block the message
+                message.attack_detected = True
+                _emit_and_record(self.session, ["user", "comm", "admin"], "security.key_rejected",
+                                 communication_id=comm.id, state="KEY_REJECTED",
+                                 payload={"message_id": message.id,
+                                          "reason": "qber above simulation threshold"})
+                _emit_and_record(self.session, ["user", "comm", "admin"], "message.blocked",
+                                 communication_id=comm.id, state="BLOCKED",
+                                 payload={"message_id": message.id,
+                                          "reason": "security check failed"})
+                audit(self.session, "block",
+                      f"message {message.id} blocked; key rejected "
+                      f"(qber={decision.qber} > threshold={decision.threshold})",
+                      user_id=message.sender_id)
 
         # ---- report (B27) ------------------------------------------------------------
         latest_run = qkd.latest_run(comm.id)
@@ -229,3 +288,82 @@ class MessagingService:
         if commit_each_stage:
             # Persist terminal state immediately (visible to pollers now).
             self.session.commit()
+
+    def _adaptive_retry(
+        self,
+        message: Message,
+        plaintext: str,
+        comm: CommunicationSession,
+        sm,
+        engine: SecurityEngine,
+        qkd: QkdService,
+        security_requirement: str,
+        stage_delay: float,
+        commit_each_stage: bool,
+        retry_count: int,
+        failed_baseline,
+    ) -> None:
+        """Adaptive retry: AI recommends a different protocol after failure."""
+        recommender = AiRecommendationService(self.session)
+        features = recommender.compute_feature_snapshot(comm, security_requirement)
+        scores, _ = recommender.score_protocols(features)
+
+        # Get currently used protocols to avoid retrying the same one
+        used_protocols = set()
+        from app.models import QkdSession
+        prior_runs = (
+            self.session.query(QkdSession)
+            .filter(QkdSession.communication_id == comm.id)
+            .all()
+        )
+        for r in prior_runs:
+            used_protocols.add(r.protocol)
+
+        # Filter eligible protocols excluding already-used ones
+        eligible = {
+            name: score
+            for name, score in scores.items()
+            if recommender._is_eligible(name) and name not in used_protocols
+        }
+
+        if not eligible:
+            # No different protocol available - block
+            message.attack_detected = True
+            _emit_and_record(self.session, ["user", "comm", "admin"], "security.key_rejected",
+                             communication_id=comm.id, state="KEY_REJECTED",
+                             payload={"message_id": message.id,
+                                      "reason": "qber above threshold, no alternative protocol"})
+            _emit_and_record(self.session, ["user", "comm", "admin"], "message.blocked",
+                             communication_id=comm.id, state="BLOCKED",
+                             payload={"message_id": message.id,
+                                      "reason": "security check failed, no alternative"})
+            audit(self.session, "block",
+                  f"message {message.id} blocked; no alternative protocol available",
+                  user_id=message.sender_id)
+            return
+
+        # Pick the best eligible protocol
+        best = max(eligible.items(), key=lambda kv: kv[1])[0]
+
+        _emit_and_record(self.session, ["user", "comm", "admin"], "protocol.adaptive_retry",
+                         communication_id=comm.id, state=comm.session_status,
+                         payload={"failed_protocol": failed_baseline.protocol,
+                                  "retry_protocol": best,
+                                  "reason": f"QBER {failed_baseline.qber:.4f} exceeded threshold",
+                                  "retry_count": retry_count + 1})
+        audit(self.session, "adaptive_retry",
+              f"communication {comm.id}: retry with {best} after {failed_baseline.protocol} failed "
+              f"(qber={failed_baseline.qber})", user_id=message.sender_id)
+
+        # Update protocol for the retry
+        comm.protocol = best
+        message.protocol = best
+        dwell()
+
+        # Re-run the QKD pipeline with the new protocol
+        self._run_qkd_and_complete(
+            message, plaintext, comm, sm,
+            lambda: None,  # dwell is no-op here
+            security_requirement, stage_delay, commit_each_stage,
+            retry_count=retry_count + 1,
+        )

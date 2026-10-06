@@ -20,6 +20,7 @@ export function installMockWebSocket(): void {
     onerror: (() => void) | null = null;
     onmessage: ((evt: { data: string }) => void) | null = null;
     private listener: Parameters<typeof db.addListener>[0] | null = null;
+    private pingTimer: number | null = null;
     private url: URL;
 
     constructor(url: string) {
@@ -53,6 +54,12 @@ export function installMockWebSocket(): void {
         this.readyState = MockWebSocket.OPEN;
         this.onopen?.();
         if (this.listener) db.addListener(this.listener);
+        // Mirror the server heartbeat so the client's frame watchdog stays fed.
+        this.pingTimer = window.setInterval(() => {
+          if (this.readyState === MockWebSocket.OPEN) {
+            this.onmessage?.({ data: JSON.stringify({ action: "ping", timestamp: null }) });
+          }
+        }, 30000);
       }, 50);
     }
 
@@ -64,6 +71,10 @@ export function installMockWebSocket(): void {
     close() {
       if (this.listener) db.removeListener(this.listener);
       this.listener = null;
+      if (this.pingTimer != null) {
+        window.clearInterval(this.pingTimer);
+        this.pingTimer = null;
+      }
       this.readyState = MockWebSocket.CLOSED;
       this.onclose?.();
     }

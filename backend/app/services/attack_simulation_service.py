@@ -60,40 +60,69 @@ class AttackSimulationService:
         self.qkd = QkdService(session)
 
     # ---- B22: Eve surfaces -------------------------------------------------------
-    def active_communications(self) -> list[dict]:
-        """Metadata-only list of sessions inside the attack window."""
-        rows = (
-            self.session.query(CommunicationSession)
-            .filter(CommunicationSession.session_status.in_(ATTACK_WINDOW_STATES))
-            .order_by(CommunicationSession.created_at.desc())
-            .all()
+    def active_communications(self, attacker_id: int | None = None) -> list[dict]:
+        """Metadata-only list of USER<->USER sessions inside the attack window.
+
+        Eve observes other users' sessions, so when `attacker_id` is given the
+        requesting attacker's own sessions are excluded (she is not a target).
+        Only safe metadata is returned: IDs, display names, protocol, state,
+        QBER/threshold of the latest run and attack eligibility. Plaintext and
+        key material are never part of this payload.
+        """
+        query = self.session.query(CommunicationSession).filter(
+            CommunicationSession.session_status.in_(ATTACK_WINDOW_STATES)
         )
+        if attacker_id is not None:
+            query = query.filter(
+                CommunicationSession.sender_id != attacker_id,
+                CommunicationSession.receiver_id != attacker_id,
+            )
+        rows = query.order_by(CommunicationSession.created_at.desc()).all()
+
         items: list[dict] = []
         for c in rows:
+            run = (
+                self.session.query(QkdSession)
+                .filter(QkdSession.communication_id == c.id)
+                .order_by(QkdSession.id.desc())
+                .first()
+            )
             items.append(
                 {
                     "id": c.id,
+                    "communication_id": c.id,
+                    "sender_id": c.sender_id,
+                    "receiver_id": c.receiver_id,
                     "sender_name": _name_of(self.session, c.sender_id),
                     "receiver_name": _name_of(self.session, c.receiver_id),
                     "protocol": c.protocol,
                     "session_state": c.session_status,
+                    "status": c.session_status,
+                    "qber": run.qber if run else None,
+                    "threshold": run.threshold if run else None,
+                    "attackable": c.session_status in ATTACK_WINDOW_STATES,
+                    "attack_types": list(ATTACK_TYPES),
                     "created_at": c.created_at.isoformat(),
                 }
             )
         return items
 
-    def eve_dashboard_summary(self) -> dict:
+    def eve_dashboard_summary(self, attacker_id: int | None = None) -> dict:
         total = self.session.query(Attack).count()
         detected = (
             self.session.query(Attack)
             .filter(Attack.detection_status == "DETECTED")
             .count()
         )
-        active = (
-            self.session.query(CommunicationSession)
-            .filter(CommunicationSession.session_status.in_(ATTACK_WINDOW_STATES))
-            .count()
+        active_query = self.session.query(CommunicationSession).filter(
+            CommunicationSession.session_status.in_(ATTACK_WINDOW_STATES)
         )
+        if attacker_id is not None:
+            active_query = active_query.filter(
+                CommunicationSession.sender_id != attacker_id,
+                CommunicationSession.receiver_id != attacker_id,
+            )
+        active = active_query.count()
         rate = round(detected / total, 4) if total else 0.0
         return {
             "active_sessions": active,

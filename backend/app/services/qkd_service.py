@@ -116,6 +116,15 @@ class QkdService:
         if on_progress:
             on_progress(10, "initializing")
         result = protocol.run(params)
+        if on_progress:
+            # Granular progress ticks also PACED the live attack window: under
+            # commit_each_stage the pipeline commits+dwells on every tick, so a
+            # USER->USER session stays observably attackable long enough for a
+            # real EVE client to see, select and target it (B22/B33 demo flow).
+            on_progress(35, "transmitting")
+            on_progress(60, "sifting bases")
+            on_progress(85, "sampling errors")
+            on_progress(100, "finalizing")
         threshold = self.threshold_for(protocol_name)
 
         qber = compute_qber(result.errors, result.compared_bits)

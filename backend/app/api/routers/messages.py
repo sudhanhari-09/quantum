@@ -30,10 +30,14 @@ def create_message(
     if not get_settings().process_async:
         svc = MessagingService(session)
         message, comm = svc.create_message(
-            user, body.receiver_qsc_id, body.content, body.security_requirement
+            user, body.receiver_qsc_id, body.content, body.security_requirement,
+            protocol=body.protocol,
         )
         # Full secure pipeline runs synchronously; REST stays source of truth.
-        svc.run_secure_pipeline(message, body.content, body.security_requirement)
+        svc.run_secure_pipeline(
+            message, body.content, body.security_requirement,
+            user_protocol=body.protocol,
+        )
         session.flush()
         return {
             "message_id": message.id,
@@ -49,12 +53,14 @@ def create_message(
         owner = s.get(User, user.id)
         svc = MessagingService(s)
         message, comm = svc.create_message(
-            owner, body.receiver_qsc_id, body.content, body.security_requirement
+            owner, body.receiver_qsc_id, body.content, body.security_requirement,
+            protocol=body.protocol,
         )
         message_id, comm_id = message.id, comm.id
 
     plaintext = body.content
     requirement = body.security_requirement
+    user_protocol = body.protocol
 
     def run_pipeline() -> None:
         import time
@@ -74,6 +80,7 @@ def create_message(
                     return
                 MessagingService(s).run_secure_pipeline(
                     m, plaintext, requirement,
+                    user_protocol=user_protocol,
                     stage_delay=_gs().pipeline_stage_delay_ms / 1000.0,
                     commit_each_stage=True,
                 )

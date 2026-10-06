@@ -152,19 +152,24 @@ class AuthService:
         return settings.refresh_token_expire_days
 
     # ---- refresh ---------------------------------------------------------------
+    def _revoke_family(self, user_id: int) -> None:
+        """Reuse detected: every live refresh token for the user is revoked."""
+        self.refresh_tokens.revoke_all_for_user(user_id)
+        audit(
+            self.session,
+            "security.refresh_reuse_detected",
+            f"refresh reuse detected for user {user_id}; family revoked",
+            user_id=user_id,
+        )
+
     def refresh(self, raw_refresh_token: str) -> dict:
         token_hash = hash_refresh_token(raw_refresh_token)
         stored = self.refresh_tokens.get_any(token_hash)
 
         if stored is not None and stored.revoked_at is not None:
-            # Reuse of a rotated/revoked token: revoke the whole family.
-            self.refresh_tokens.revoke_all_for_user(stored.user_id)
-            audit(
-                self.session,
-                "security.refresh_reuse_detected",
-                f"refresh reuse detected for user {stored.user_id}; family revoked",
-                user_id=stored.user_id,
-            )
+            # Replay of an already rotated/revoked token: assume theft and kill
+            # the whole family (Section 08/security requirements).
+            self._revoke_family(stored.user_id)
             raise TokenReused()
 
         if stored is None or _as_utc(stored.expires_at) <= datetime.now(timezone.utc):
@@ -174,7 +179,13 @@ class AuthService:
             self.refresh_tokens.revoke(stored)
             raise UserDisabled()
 
-        self.refresh_tokens.revoke(stored)  # rotate
+        # Rotation is a single atomic compare-and-swap: exactly one concurrent
+        # request can consume this refresh token; a loser is treated as reuse so
+        # two valid successors can never be issued from one token.
+        if self.refresh_tokens.revoke_if_active(token_hash) is None:
+            self._revoke_family(stored.user_id)
+            raise TokenReused()
+
         new_raw, new_hash = create_refresh_token()
         expires_at = datetime.now(timezone.utc) + timedelta(days=self._refresh_days())
         self.refresh_tokens.add(user.id, new_hash, expires_at)

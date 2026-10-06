@@ -58,7 +58,7 @@ def active_for_eve(
 ):
     if eve.role != Role.ATTACKER:
         raise AppError("Attacker role required.", code="ROLE_FORBIDDEN", status_code=403)
-    return {"items": AttackSimulationService(session).active_communications()}
+    return {"items": AttackSimulationService(session).active_communications(eve.id)}
 
 
 @router.get("")

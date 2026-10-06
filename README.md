@@ -118,7 +118,7 @@ All features below were verified against the source code.
 | Admin dashboard, attacker CRUD, config | `routers/admin.py` | threshold updates audited |
 | Protocol analytics / security events feed | `routers/admin.py` | live DB aggregates |
 | REST API with auto OpenAPI docs | `docs/openapi.json` | 39 paths; Swagger at `/docs` |
-| Database persistence | SQLAlchemy + Alembic (SQLite/PostgreSQL) | 4 migrations |
+| Database persistence | SQLAlchemy + Alembic (SQLite/PostgreSQL) | 5 migrations |
 ---
 
 ## System Architecture
@@ -174,7 +174,7 @@ Layers: (1) Frontend â€” React 19 + TypeScript + Vite, TanStack Query, Zust
 
 ## Supported QKD Protocols
 
-`backend/app/protocols/base.py` defines `ProtocolBase` + a `ProtocolRegistry`. The default registry registers six protocols; **only BB84 is implemented and runnable**. The other five are registered-but-unsupported stubs that raise `501 PROTOCOL_NOT_SUPPORTED` if executed.
+`backend/app/protocols/base.py` defines `ProtocolBase` + a `ProtocolRegistry`. The default registry registers six protocols and **all six are implemented and runnable** (seeded Monte-Carlo simulations in `bb84.py` + `stubs.py`): **BB84, B92, E91, SIX_STATE, SARG04, DECOY_BB84**. All are enabled in `protocol_configs` (migration `0003_enable_all_protocols`) and eligible for AI recommendation and manual selection.
 
 ### BB84 (implemented)
 
@@ -189,9 +189,9 @@ Layers: (1) Frontend â€” React 19 + TypeScript + Vite, TanStack Query, Zust
 | Security evaluation | `QBER <= threshold` -> ACCEPTED; else REJECTED |
 | Under Eve attack | A random `round(strengthÂ·n)` subset is intercepted, measured, re-sent in a random basis, raising the measured error count and QBER |
 
-### Registered-but-unsupported stubs (v1)
+### All protocols implemented (BB84 + B92/E91/SIX_STATE/SARG04/DECOY_BB84)
 
-These exist in the registry and in admin analytics, but `run()` raises `PROTOCOL_NOT_SUPPORTED` (HTTP 501). They are disabled in `protocol_configs` and can never win the AI recommendation in v1: **B92, E91** (requires entanglement), **SIX_STATE**, **SARG04**, **DECOY_BB84**.
+All six protocols share the same seeded simulation engine and support Eve intercept-and-resend. **B92** (2 non-orthogonal states), **E91** (entanglement-based, Bell states), **SIX_STATE** (3 bases Z/X/Y), **SARG04** (BB84 variant resistant to photon-number-splitting), **DECOY_BB84** (multi-intensity decoy states). See `backend/app/protocols/stubs.py` for the per-protocol state/sifting logic.
 ---
 
 ## AI Protocol Recommendation
@@ -220,7 +220,7 @@ The attacker model is intercept-and-resend only in v1 (`ATTACK_TYPES = ("INTERCE
 
 | Aspect | Behaviour |
 |---|---|
-| Eve role | ATTACKER accounts (admin-created via admin UI/API; also bootstrappable as `eve@qsc.local`) |
+| Eve role | ATTACKER accounts (admin-created via admin UI/API; also bootstrappable as `eve@qsc.dev`) |
 | Attack window | Only sessions in `QKD_INITIALIZING`, `QKD_RUNNING`, `KEY_SIFTING`, `QBER_EVALUATION` or `SECURITY_CHECK` are attackable (`ATTACK_WINDOW_STATES`) |
 | Configuration | `POST /communications/{id}/attacks` with `attack_type` + `attack_strength` (0.1-1.0); capped at `MAX_REATTACKS` (3) |
 | Interception | Deterministic rerun of the stored baseline with `eve_fraction == strength`; `round(strength*n)` become `eve_touched` |
@@ -231,6 +231,7 @@ The attacker model is intercept-and-resend only in v1 (`ATTACK_TYPES = ("INTERCE
 | Response | DETECTED: message flagged `attack_detected`, `message.blocked` emitted, `BLOCKED` terminal |
 | Delivery / blocking | Blocked messages never appear in the inbox (inbox only returns DELIVERED/READ); sender sees the BLOCKED flag in Sent |
 | History & stats | `GET /attacks/history` (own), `GET /attacks/summary` and `/eve/dashboard/summary` (totals, detection rate) |
+| Target list | `GET /communications/active` returns metadata-only rows (communication id, sender/receiver id+name, protocol, state, latest-run QBER, attackability) for USER→USER sessions inside the window; the requesting attacker's own sessions are excluded; the EVE dashboard refreshes it live from `communication.state_changed` — no manual reload (requires `PROCESS_ASYNC=true`, the `.env.example` default) |
 
 `AttackSimulationService` is the only component allowed to launch attacks; session-state transitions remain exclusive to `StateMachineService`.
 ---
@@ -246,7 +247,7 @@ The attacker model is intercept-and-resend only in v1 (`ATTACK_TYPES = ("INTERCE
 
 ## Real-Time WebSocket Architecture
 
-Frontend `WsProvider`/`WsClient` -> JWT handshake `?token=<access_token>` -> role + ownership checks (closes 4401/4403/4404) -> `RealtimeService` (per-channel asyncio queues) -> services call `realtime_service.emit` only *after* the domain change. The same events are persisted to `communication_events` for REST replay. Server pings `{"action":"ping"}` every 30 s; clients reply `{"action":"pong"}`; auto-reconnect with exponential backoff (1 s -> 15 s). Envelope: `{type, communication_id, state, actor_role, payload, timestamp}`.
+Frontend `WsProvider`/`WsClient` -> JWT handshake `?token=<access_token>` -> role + ownership checks (closes 4401/4403/4404) -> `RealtimeService` (per-channel asyncio queues) -> services call `realtime_service.emit` only *after* the domain change. The same events are persisted to `communication_events` for REST replay. Server pings `{"action":"ping"}` every 30 s; clients reply `{"action":"pong"}`; auto-reconnect with exponential backoff (1 s -> 30 s, with jitter) plus a frame watchdog. Envelope: `{type, communication_id, state, actor_role, payload, timestamp}`.
 
 **Channels**
 
@@ -287,9 +288,17 @@ any internal failure --> FAILED                                   (terminal)
 - **Routing**: `react-router-dom` with three role zones (USER / ATTACKER / ADMIN) behind `<RequireAuth roles>`.
 - **Server state**: TanStack Query hooks (`src/queries/hooks.ts`) + a WS->invalidation map (`src/queries/live.ts`).
 - **Client state**: Zustand stores (`authStore`, `composeStore`, `attackStore`, `uiStore`).
-- **API communication**: `src/core/apiClient.ts` â€” Axios wrapper with an automatic refresh-token interceptor.
+- **API communication**: `src/core/apiClient.ts` â€” Axios wrapper; 401 responses route through the single-flight `refreshSession()` in `core/session.ts` and the original request retries once.
 - **WebSocket**: `src/core/wsClient.ts` + `wsContext.tsx` â€” role channels, exponential-backoff reconnect, heartbeat pong, typed event bus.
-- **Auth handling**: JWTs in localStorage (session only), `/auth/me` revalidation on reload, role-aware redirects and a forbidden page.
+- **Auth handling**: tokens in `sessionStorage` (tab-isolated; only the token pair is persisted — never the user or role), `/auth/me` revalidation on boot via `SessionBootstrap`, role-aware redirects and a forbidden page.
+- **Auth lifecycle** (`src/core/session.ts` is the single refresh path):
+  - `authStatus` has three states — `unknown` (tokens exist, not yet verified), `authenticated` (role came from `/auth/me`) and `unauthenticated`. Guarded routes never render while `unknown`, and an undefined role can never default to USER.
+  - **Single-flight refresh**: concurrent 401s (API + WebSocket + boot) share ONE `/auth/refresh` call; refresh is serialized across tabs via `navigator.locks`, and a token this tab already rotated away is never sent again.
+  - **Rotation-safe**: both tokens returned by `/auth/refresh` replace BOTH stored tokens together, so the pair never goes stale.
+  - **Terminal handling**: `401 TOKEN_REUSED` (or any 401/403 from `/auth/refresh`) clears tokens + user, closes the role sockets, shows a session-ended toast and redirects to `/login`. Network failures keep the session (no false logout).
+  - **Original request retried exactly once** after a successful refresh; `login`/`register`/`refresh`/`logout` never re-enter the interceptor, and 401/403/404/422/429 are never retried by React Query.
+  - **WebSocket**: one socket per channel (registry-enforced, identity-keyed — a token rotation does not rebuild sockets), latest token read before every handshake, known-expired tokens refreshed first, close `4401` ⇒ refresh once then reconnect, `4403`/`4404` ⇒ stop, network failures ⇒ exponential backoff (1s→30s) with jitter plus a frame watchdog.
+- **Per-tab sessions**: the token pair lives in `sessionStorage` (never the user/role), so two tabs can hold different logins without hijacking each other; `SessionBootstrap` verifies the stored tokens via `/auth/me` on boot, retries transient network failures with bounded backoff, and offers a manual retry screen instead of a false logout.
 - **Components**: UI kit (`Button`, `Card`, `Modal`, `StatusPill`, `StateStepper`, `Timeline`, `Table`, `Toast`, `QberMeter`), zone layouts, and domain panels.
 - **Visualization**: quantum-channel visual, attack-channel visual, QBER gauge, live steppers/timelines driven by WS events.
 - **Mock mode (dev/demo/tests only)**: MSW handlers + in-memory engine (`src/mocks/`) behind `VITE_ENABLE_MOCKS=1`. Default talks to the real backend only.
@@ -386,7 +395,7 @@ The 16 real domain-event types plus the `qkd.progress` and `attack.progress` tic
 | Event | Emitted by | Channels | Trigger |
 |---|---|---|---|
 | `communication.created` | message creation | comm, sender, receiver, admin | session created |
-| `communication.state_changed` | State Machine | comm, role sessions, eve (attack window) | every valid transition |
+| `communication.state_changed` | State Machine | comm, role sessions, eve (from window-open to window-close) | every valid transition |
 | `qkd.started` | QkdService | comm, admin | QKD_INITIALIZING entered |
 | `qkd.progress` | QkdService | comm, admin | each QKD tick (0->100) |
 | `qkd.completed` | QkdService | comm, admin | key sifting complete |
@@ -474,8 +483,10 @@ Single-source-of-truth service map (ownership enforced by code).
 
 ```text
 quantum/
-  README.md
-  README.md.bak                  (temporary backup - DELETE me)
+  README.md  backend/README.md  frontend/README.md
+  setup.ps1                      (one-shot idempotent setup for backend + frontend)
+  start_backend.cmd / test_health.cmd / test_backend.py   (optional Windows dev helpers;
+                                 some root scripts hardcode this machine's repo path)
   QSC_MASTER_DEVELOPMENT_PHASES.txt
   backend/
     alembic.ini
@@ -485,10 +496,11 @@ quantum/
     qsc.db                       (dev DB, .gitignored)
     alembic/
       env.py  script.py.mako  versions/
-        097be7581625_add_qkd_seed_column.py
         10e630a4bfa9_baseline_schema_per_section_11.py
-        6b029071db87_communication_events_qkd_sample_json.py
         0002_seeds.py
+        097be7581625_add_qkd_seed_column.py
+        0003_enable_all_protocols.py
+        6b029071db87_communication_events_qkd_sample_json.py  (head)
     app/
       main.py  __init__.py
       api/  core/  db/  models/  protocols/  simulation/  services/  ws/
@@ -501,7 +513,7 @@ quantum/
       db/       base.py  session.py  __init__.py
       models/   communication.py  qkd.py  support.py  user.py  __init__.py
       protocols/
-        base.py  bb84.py  stubs.py  __init__.py
+        base.py  bb84.py  stubs.py  __init__.py   (all six protocols implemented)
       simulation/
         rng.py  __init__.py
       services/
@@ -514,14 +526,17 @@ quantum/
         user_service.py         __init__.py
       ws/       manager.py  routes.py  __init__.py
     docs/
-      openapi.json  check_db.py  export_openapi.py
-      live_attack_proof.py  live_proof.py  probe_async.py  probe_window.py
+      openapi.json
     scripts/
-      probe_window.py
+      backfill_0003_enable_protocols.py   (one-time repair for DBs stamped past 0003)
+      check_db.py  export_openapi.py  eve_active_e2e.py  live_attack_proof.py
+      live_proof.py  probe_async.py  probe_window.py
     tests/
       conftest.py
       test_b1_foundation.py ... test_b37_integration.py
-      test_e2e_integration.py  test_integration_contract.py
+      test_auth_lifecycle.py  test_auth_runtime_trace.py
+      test_eve_active_visibility.py
+      test_async_pipeline.py  test_e2e_integration.py  test_integration_contract.py
       api/  integration/  unit/
   frontend/
     .env.example / .env.development
@@ -531,10 +546,11 @@ quantum/
       src/
         App.tsx  routes.tsx  main.tsx  index.css
         apiTypes.ts  assets/  types/api.ts
-        components/ui/   features/   mocks/   queries/   tests/
-        core/   constants/   types/
+        components/ui/   mocks/   queries/   constants/   types/
+        core/            (apiClient, session, tokenUtils, authStore, wsClient, wsContext, uiStore...)
         features/{admin,auth,communications,dashboard,eve,landing,layout,messaging,profile,reports}/
-        tests/{auth,pages,timeline,ui,vocab}.test.tsx
+        features/auth/   (LoginPage, RegisterPage, RequireAuth, SessionBootstrap)
+        tests/           (auth, eve, pages, session, timeline, ui, vocab) + bb84Fixture.ts, setup.ts
 ```
 ---
 
@@ -596,9 +612,11 @@ quantum/
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env                 # then edit .env (see Environment Configuration)
+# Windows (PowerShell): .\.venv\Scripts\Activate.ps1   (or just call .\.venv\Scripts\python.exe directly)
+# macOS/Linux: source .venv/bin/activate
+python -m pip install -r requirements.txt
+copy .env.example .env                # Windows; macOS/Linux: cp .env.example .env
+                                      # then edit .env (see Environment Configuration)
 ```
 
 ### Frontend
@@ -606,7 +624,8 @@ cp .env.example .env                 # then edit .env (see Environment Configura
 ```bash
 cd frontend
 npm ci
-cp .env.example .env.development     # then edit .env.development
+copy .env.example .env.development    # Windows; macOS/Linux: cp .env.example .env.development
+                                      # defaults already point at http://localhost:8000
 ```
 ---
 
@@ -630,12 +649,12 @@ The backend reads `.env` from `backend/` (path resolved in `app/core/config.py`)
 | `CHANNEL_NOISE_DEFAULT` | `0.01` | baseline channel noise |
 | `QKD_QUBITS_DEFAULT` | `256` | qubits per QKD run |
 | `MAX_REATTACKS` | `3` | per session |
-| `PROCESS_ASYNC` | `false` | `true` -> POST /messages returns 202 + background pipeline |
+| `PROCESS_ASYNC` | `true` in `.env.example` (code default `false`) | `true` -> POST /messages returns 202 + background pipeline with a visible, attackable window |
 | `PIPELINE_STAGE_DELAY_MS` | `1200` | stage dwell (enables live attack window) |
 | `RATE_LIMIT_*` | (see .env.example) | auth/search/attack/default per minute |
 | `CORS_ORIGINS` | `http://localhost:5173,http://localhost:4173` | allowlist |
 | `ENABLE_ADMIN_BOOTSTRAP` | `false` | one-time admin/eve creation |
-| `ADMIN_EMAIL` / `ADMIN_NAME` | `admin@qsc.local` / `Platform Admin` | bootstrap account |
+| `ADMIN_EMAIL` / `ADMIN_NAME` | `admin@qsc.dev` / `Platform Admin` | bootstrap account; the seeded attacker is `eve@qsc.dev` |
 
 ### Frontend variables (`frontend/.env.example` -> `.env.development`)
 
@@ -662,12 +681,14 @@ The backend uses SQLAlchemy 2.x, Alembic for migrations, and SQLite by default (
 
 ```bash
 cd backend
+# Windows (PowerShell): .\.venv\Scripts\alembic.exe upgrade head
 alembic upgrade head                 # applies all migrations to DATABASE_URL
 ```
 
 - Alembic is wired to `settings.database_url` and `Base.metadata`; `app/models` registers all tables (`alembic/env.py`).
-- Migrations (4): `097be7581625` baseline schema (section 11), `6b029071db87` communication_events + QKD sample_json, `0002_seeds.py` protocol/config seeds, and `add_qkd_seed_column` seed column.
+- Migrations (5, single linear chain ending at head `6b029071db87`): `10e630a4bfa9` baseline schema → `0002_seeds` protocol/config seeds + bootstrap → `097be7581625` qkd `seed` column → `0003_enable_all_protocols` enable all six protocols → `6b029071db87` communication_events + qkd `sample_json`.
 - For a fresh SQLite dev DB, just delete `qsc.db` and re-run `alembic upgrade head` (or let the app auto-create in dev). In production use `DATABASE_URL=postgresql+psycopg://...`.
+- Dev DBs created before the `0003_enable_all_protocols` migration (older branch layout) may be stamped past it without the protocol-enable UPDATE applied — run `backend/scripts/backfill_0003_enable_protocols.py` once to repair.
 ---
 
 ## Running the Backend
@@ -675,21 +696,26 @@ alembic upgrade head                 # applies all migrations to DATABASE_URL
 ```bash
 cd backend
 # (venv + pip install -r requirements.txt first, plus a configured .env)
+# Windows (PowerShell):
+.\.venv\Scripts\uvicorn.exe app.main:app --reload --port 8000
+# macOS/Linux / activated venv:
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 - Docs: `http://localhost:8000/docs` (Swagger) and `http://localhost:8000/redoc`.
-- Health: `http://localhost:8000/health`.
+- Health: `GET http://localhost:8000/api/v1/health` -> `{status, version, db}`.
 ---
 
 ## Running the Frontend
 
 ```bash
 cd frontend
-npm run dev          # -> http://localhost:5173
+npm ci                # first time only (node_modules already present -> skip)
+npm run dev           # -> http://localhost:5173
 ```
 
 - With `VITE_ENABLE_MOCKS=1` the app boots against the in-memory MSW engine (no backend required). Default (`0`) talks to the real backend.
+- Production build: `npm run build`, then `npm run preview` (serves on port 4173 — already in the backend CORS allowlist).
 ---
 
 ## Complete Local Development Setup
@@ -700,35 +726,37 @@ Run everything in the order below. Both apps can run concurrently in separate sh
 # 1) Backend
 cd backend
 python -m venv .venv
-# Windows: .venv\Scripts\activate ; macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
+# Windows (PowerShell): .\.venv\Scripts\Activate.ps1 ; macOS/Linux: source .venv/bin/activate
+python -m pip install -r requirements.txt
 python -c "import os,base64; print(base64.b64encode(os.urandom(32)).decode())"  # -> QSC_MASTER_KEY
-cp .env.example .env
+copy .env.example .env    # Windows; macOS/Linux: cp .env.example .env
 # edit .env: set QSC_MASTER_KEY=<the 32-byte base64 value>; optionally set ENABLE_ADMIN_BOOTSTRAP=true
-alembic upgrade head
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\uvicorn.exe app.main:app --reload --port 8000
 
-# 2) Frontend
+# 2) Frontend (separate shell)
 cd frontend
 npm ci
 npm run dev          # http://localhost:5173 (talks to backend by default)
 ```
 
-- Backend API: `http://localhost:8000` / docs at `/docs`.
+- Backend API: `http://localhost:8000` / docs at `/docs` / health at `/api/v1/health`.
 - Frontend: `http://localhost:5173`.
 - Optional: set `VITE_ENABLE_MOCKS=1` in `frontend/.env.development` to run the frontend against the MSW mock engine with no backend.
+- Optional Windows helpers at the repo root: `start_backend.cmd` (uvicorn, logs to `backend.log`), `test_health.cmd` (curl `/health`), `test_backend.py` (httpx smoke of health + auth), and `check_db.py` (DB connectivity probe). `start_backend.bat`, `run_tests.bat` and `check_db.py` embed the author's absolute repo path — edit them before use or prefer the commands above.
 ---
 
 ## Testing
 
 ### Frontend (Vitest)
 
-The frontend ships **27 Vitest test cases** in `frontend/src/tests/`: `auth.test.tsx`, `pages.test.tsx`, `timeline.test.ts`, `ui.test.tsx`, `vocab.test.ts`, plus fixtures such as `bb84Fixture.ts`.
+The frontend ships **40 Vitest tests** in `frontend/src/tests/`: `auth.test.tsx`, `eve.test.ts`, `pages.test.tsx`, `session.test.ts`, `timeline.test.ts`, `ui.test.tsx`, `vocab.test.ts`, plus fixtures such as `bb84Fixture.ts`.
 
 ```bash
 cd frontend
-npx vitest run                 # run all (CI mode, no watch)
-npx vitest run --ui            # optional UI runner
+npm test                        # run all (CI mode, no watch)
+npx vitest run --ui             # optional UI runner
+npx vitest --coverage           # v8 coverage (thresholds in vite.config.ts)
 ```
 
 - Environment: jsdom; `@testing-library/react` + `user-event` for component tests.
@@ -736,25 +764,29 @@ npx vitest run --ui            # optional UI runner
 
 ### Backend (pytest)
 
-The backend test suite is organized by track (B1 foundation -> B37 integration). Run subsets by category, or the full file:
+The backend test suite is organized by track (B1 foundation -> B38 final validation + integration). Run subsets by category, or the full file:
 
 ```bash
 cd backend
-pytest -q                              # all tests
-pytest tests/test_b1_foundation.py -q  # single file
-pytest -k "state_machine or qber" -q   # keyword filter
+# Windows (PowerShell):
+.\.venv\Scripts\python.exe -m pytest tests/
+# macOS/Linux / activated venv:
+pytest -q
+.\.venv\Scripts\python.exe -m pytest tests\test_b1_foundation.py -q  # single file
+pytest -k "state_machine or qber" -q                                 # keyword filter
 ```
 
 - Tests use an isolated SQLite DB (per-process temp file), so they do not touch the dev `qsc.db`.
+- Config lives in `pytest.ini` (`asyncio_mode = auto`, `testpaths = tests`, `-q` default).
 ---
 
 ## Test Coverage / Current Test Status
 
-- **Backend**: the verified subset of **43 tests** passes (`pytest`, exit code 0). The full suite has one **pre-existing, documented** failure that is *not* a logic bug â€” an import-ordering / module-name-shadow failure involving the `app` package under some runners (noted in the project's test status notes). It is a test-layout concern, not a behavioural defect.
-- **Frontend**: **27 Vitest cases** verified.
+- **Backend**: **118 tests** in `backend/tests/` (`pytest --collect-only -q`), covering the state machine, BB84 known-answer vectors, QBER engine, crypto, AI scoring, pipeline, attack paths, admin, WebSocket handshake, auth lifecycle/runtime trace, Eve active-communication visibility, and hardening. Run `pytest` for the live result.
+- **Frontend**: **40 tests** across the Vitest suites listed above (`session.test.ts` covers single-flight refresh, rotation/terminal states and per-tab session isolation; `eve.test.ts` covers the live Active Communications invalidation) — run `npm test` in `frontend/` for the live result.
 - See `frontend/README.md` and the `vitest` setup for frontend details.
 
-> The README itself is documentation-only; running `pytest` (backend) and `npx vitest run` (frontend) is the authoritative status check.
+> The README itself is documentation-only; running `pytest` (backend) and `npm test` (frontend) is the authoritative status check.
 ---
 
 ## Integration Verification
@@ -764,7 +796,7 @@ The implementation was validated against the source rather than the other way ar
 - 39 REST paths counted from `backend/docs/openapi.json`; the `## API Overview` table lists exactly these path groups.
 - 16 domain WebSocket event types mined from `realtime_service.emit` call sites, plus the `qkd.progress` / `attack.progress` tick channels.
 - The single-source rules: only `QkdService`, `QberEngine`, `SecurityEngine`, `AttackSimulationService`, and `StateMachineService` do their respective roles â€” enforced by the service-ownership table.
-- The BB84 stub protocols (B92/E91/SIX_STATE/SARG04/DECOY_BB84) all raise `PROTOCOL_NOT_SUPPORTED` (501).
+- The six protocols (B92/E91/SIX_STATE/SARG04/DECOY_BB84 included) are all implemented and `supported=True`.
 - Threshold default `0.11`, admin-tunable via `PATCH /api/v1/admin/config`.
 - The folder tree matches the actual `Get-ChildItem` output of the repository.
 ---
@@ -812,7 +844,7 @@ The implementation was validated against the source rather than the other way ar
 - **Auth failures**: unknown email and wrong password return the same error (no enumeration); refresh-token reuse returns `TOKEN_REUSED` and revokes the family.
 - **QKD failures**: unsupported protocol -> `501`; a zero `compared_bits` set -> QBER raises and the run is recorded as `FAILED`.
 - **WS failures**: invalid/missing token -> close `4401`; role denied -> `4403`; unknown session -> `4404` (codes are app-level, chosen since RFC 6455 only defines 1000-1015 by default).
-- **Frontend**: the Axios interceptor auto-refreshes and retries a 401; on terminal 403 it redirects to `/unauthorized` and surfaces a toast.
+- **Frontend**: the Axios interceptor routes 401s through the single-flight refresh and retries once; on terminal 403 it redirects to `/unauthorized` and surfaces a toast.
 - **Logging**: structured per-request logs with request IDs; security-relevant events (login, attack, threshold change, token reuse) are audited server-side.
 ---
 
@@ -832,20 +864,20 @@ The implementation was validated against the source rather than the other way ar
 - **Events after commit**: services emit via `RealtimeService` (the only WS emit point) *after* the domain write persists, and `EventRecorder` writes timeline rows in the same transaction.
 - **Secrets**: never log `sifted_key_bits`, plaintext, or `QSC_MASTER_KEY`. Encrypt-then-store; the key is encrypted at rest.
 - **Reproducibility**: QKD uses a per-session seed; injecting Eve must not change Alice/Bob/noise streams (separate named RNG streams).
-- **Protocol stubs**: new protocols start as stubs raising `PROTOCOL_NOT_SUPPORTED`; implement behind the `ProtocolBase` interface and mark `supported=True`.
+- **Protocol extensions**: all six registered protocols are implemented; a NEW protocol starts as a stub raising `PROTOCOL_NOT_SUPPORTED`, and graduates by implementing `ProtocolBase`, setting `supported=True`, and (optionally) seeding a `protocol_configs` row.
 - **Testing**: backend tests use isolated temp SQLite DBs; frontend tests use MSW and jsdom. Add a scenario to the track-ordered suite.
 ---
 
 ## Current Implementation Status
 
-As built for this milestone. Only `README.md` was modified for this rewrite; no application source code changed.
+Status of the working tree at this milestone (verified against source on 2026-10-01): 39 REST paths, 5 migrations ending at `6b029071db87`, all six protocols implemented + enabled, 118 backend tests, 40 frontend tests.
 
 | Area | Status |
 |---|---|
 | BB84 QKD simulation | Implemented (seeded, reproducible) |
-| B92 / E91 / SIX_STATE / SARG04 / DECOY_BB84 | Registered stubs, raise 501 |
+| B92 / E91 / SIX_STATE / SARG04 / DECOY_BB84 | Fully implemented (seeded simulations, `supported=True`) |
 | QBER engine | Implemented, threshold-gated |
-| AI protocol recommendation | Implemented (BB84 is the only eligible winner) |
+| AI protocol recommendation | Implemented (all six enabled protocols compete; top scorer is executed) |
 | Eve attack (intercept-and-resend) | Implemented, deterministic |
 | Attack detection + message blocking | Implemented |
 | Communication state machine | Implemented (full table, validated) |
@@ -853,17 +885,18 @@ As built for this milestone. Only `README.md` was modified for this rewrite; no 
 | WebSocket live events | Implemented (16 types + progress ticks) |
 | REST timeline replay | Implemented |
 | Auth (bcrypt + JWT access + rotating refresh) | Implemented |
+| Session lifecycle (single-flight refresh, per-tab sessions, rotation-safe) | Implemented (`core/session.ts` + `SessionBootstrap`) |
 | RBAC (USER / ATTACKER / ADMIN) | Implemented |
 | Admin config (threshold) + audit | Implemented |
 | Security reports + audit trail | Implemented |
 | OpenAPI (39 paths) | Generated (`docs/openapi.json`) |
-| Tests (backend 43 verified, frontend 27) | Passing subset; documented pre-existing full-suite failure |
+| Tests (backend 118, frontend 40) | Suites runnable via `pytest` / `npm test`; auth-lifecycle + Eve visibility regressions included |
 | Production hardening (HTTPS/HSTS, prod config guard) | Settings guard implemented; infra not yet containerised |
 ---
 
 ## Future Enhancements
 
-- Implement the stub protocols (B92, E91, SIX_STATE, SARG04, DECOY_BB84) behind `ProtocolBase` and enable them to compete in AI recommendation.
+- Implement remaining protocol variants or refine the existing ones (B92, E91, SIX_STATE, SARG04, DECOY_BB84 are implemented; consider richer channel models).
 - Real key reconciliation/error-correction post-processing for BB84.
 - Entanglement-based E91 simulation + entanglement-swapping visual.
 - Decoy-state analysis and photon-number-splitting (PNS) attack variant.

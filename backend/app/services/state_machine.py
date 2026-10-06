@@ -135,7 +135,15 @@ class StateMachineService:
         from app.services.realtime_service import realtime
 
         channels = ["user", "admin", f"comm:{comm.id}"]
-        if current in ATTACK_WINDOW_STATES or new_state in ("ATTACK_DETECTED", "BLOCKED"):
+        # Eve is notified from the moment the window OPENS (new_state) through
+        # every in-window transition (current) until it closes (ATTACK_DETECTED /
+        # BLOCKED). Without `new_state`, the QKD_INITIALIZING announcement would
+        # never reach Eve and her target list could not refresh itself live.
+        if (
+            current in ATTACK_WINDOW_STATES
+            or new_state in ATTACK_WINDOW_STATES
+            or new_state in ("ATTACK_DETECTED", "BLOCKED")
+        ):
             channels.append("eve")
         realtime.emit(
             channels,

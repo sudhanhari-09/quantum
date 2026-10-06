@@ -229,6 +229,7 @@ class MockBackend {
       message_status: "PENDING",
       key_status: "PENDING",
       qber: null,
+      threshold: null,
       attack_detected: false,
       created_at: now,
       completed_at: null,
@@ -633,19 +634,37 @@ class MockBackend {
     return msg;
   }
 
-  activeSessions(): ActiveSession[] {
+  activeSessions(requesterId?: number): ActiveSession[] {
     return this.comms
-      .filter((c) =>
-        ["QKD_INITIALIZING", "QKD_RUNNING", "KEY_SIFTING", "QBER_EVALUATION", "SECURITY_CHECK"].includes(c.session_status),
+      .filter(
+        (c) =>
+          ["QKD_INITIALIZING", "QKD_RUNNING", "KEY_SIFTING", "QBER_EVALUATION", "SECURITY_CHECK"].includes(
+            c.session_status,
+          ) &&
+          c.sender_id !== requesterId &&
+          c.receiver_id !== requesterId,
       )
-      .map((c) => ({
-        id: c.id,
-        sender_name: this.users.find((u) => u.id === c.sender_id)?.name ?? "?",
-        receiver_name: this.users.find((u) => u.id === c.receiver_id)?.name ?? "?",
-        protocol: c.protocol,
-        session_state: c.session_status,
-        created_at: c.created_at,
-      }));
+      .map((c) => {
+        const run = [...this.qkdRuns]
+          .filter((r) => r.communication_id === c.id)
+          .sort((a, b) => b.id - a.id)[0];
+        return {
+          id: c.id,
+          communication_id: c.id,
+          sender_id: c.sender_id,
+          receiver_id: c.receiver_id,
+          sender_name: this.users.find((u) => u.id === c.sender_id)?.name ?? "?",
+          receiver_name: this.users.find((u) => u.id === c.receiver_id)?.name ?? "?",
+          protocol: c.protocol,
+          session_state: c.session_status,
+          status: c.session_status,
+          qber: run?.qber ?? null,
+          threshold: run?.threshold ?? null,
+          attackable: true,
+          attack_types: ["INTERCEPT_AND_RESEND"],
+          created_at: c.created_at,
+        };
+      });
   }
 
   userSummary(userId: number) {
@@ -691,6 +710,7 @@ class MockBackend {
       message_status: c.message_status,
       key_status: c.key_status,
       qber: c.qber,
+      threshold: c.threshold,
       attack_detected: c.attack_detected,
       created_at: c.created_at,
       completed_at: c.completed_at,
@@ -764,7 +784,7 @@ class MockBackend {
   }
 }
 
-function httpError(status: number, code: string) {
+export function httpError(status: number, code: string) {
   const err = new Error(code) as Error & { __http?: [number, string] };
   err.__http = [status, code];
   return err;

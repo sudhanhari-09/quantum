@@ -1,4 +1,4 @@
-# QSC Platform — Backend (Track B)
+﻿# QSC Platform — Backend (Track B)
 
 Backend for the **Quantum Secure Communication (QSC) Platform**: a software-only
 simulation of Quantum Key Distribution (BB84), AI-driven protocol selection,
@@ -24,6 +24,7 @@ copy .env.example .env    # then set JWT_SECRET_KEY + generate QSC_MASTER_KEY
 
 # schema + seeds (protocol_configs; optional admin/eve bootstrap via env flags)
 .\.venv\Scripts\alembic.exe upgrade head
+# (dev DBs already stamped past 0003: run scripts/backfill_0003_enable_protocols.py once)
 
 # run
 .\.venv\Scripts\uvicorn.exe app.main:app --reload --port 8000
@@ -32,6 +33,8 @@ copy .env.example .env    # then set JWT_SECRET_KEY + generate QSC_MASTER_KEY
 - Interactive API docs: `http://localhost:8000/docs`
 - Health: `GET /api/v1/health -> {status, version, db}`
 - Exported contract: `docs/openapi.json` (39 paths) — source for frontend typed clients
+
+> One-shot alternative: from the repo root run `powershell -ExecutionPolicy Bypass -File .\setup.ps1` — it sets up backend + frontend idempotently (skips steps already done).
 
 ### Generating secrets
 
@@ -45,12 +48,15 @@ copy .env.example .env    # then set JWT_SECRET_KEY + generate QSC_MASTER_KEY
 
 Set in `.env` before `alembic upgrade head`:
 `ENABLE_ADMIN_BOOTSTRAP=true`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
-Creates one ADMIN plus one ATTACKER (`eve@qsc.local`) account idempotently.
+Creates one ADMIN plus one ATTACKER (`eve@qsc.dev`) account idempotently.
 
 ### Tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/        # 97 tests
+.\.venv\Scripts\python.exe -m pytest tests/        # 118 tests (incl. auth lifecycle + Eve active visibility)
+
+# Live end-to-end proof against a running server (EVE sees USER A -> USER B):
+.\.venv\Scripts\python.exe scripts/eve_active_e2e.py
 ```
 
 ---
@@ -75,14 +81,14 @@ app/
 │                         state_machine, ai_recommendation, qkd, qber_engine,
 │                         security_engine, key_service, encryption_service,
 │                         attack_simulation, delivery, reporting, audit, realtime
-├── protocols/            ProtocolBase + registry; BB84 implemented;
-│                         B92/E91/SIX_STATE/SARG04/DECOY_BB84 registered stubs (501)
+├── protocols/            ProtocolBase + registry; **all six QKD protocols implemented**
+│                         (BB84, B92, E91, SIX_STATE, SARG04, DECOY_BB84)
 ├── simulation/           seeded RNG streams (independent per actor → deterministic reruns)
 ├── api/routers/          health, auth, users, messages, communications,
 │                         attacks, reports, dashboard, protocols, admin
 └── ws/                   connection manager + /ws/* routes (JWT handshake)
 alembic/                  baseline schema + seed revisions
-tests/                    unit, API, integration (97 tests)
+tests/                    track suites + API/integration contracts (118 tests)
 docs/openapi.json         exported contract snapshot
 ```
 
@@ -109,6 +115,13 @@ deterministically **reruns** the stored seeded baseline with Eve intercepting
 DETECTED ⇒ session → BLOCKED instantly (window closes). NOT_DETECTED ⇒ the
 session resumes; re-attacks capped at `MAX_REATTACKS=3`.
 
+EVE discovers live targets via `GET /api/v1/communications/active`
+(metadata-only: id, sender/receiver, protocol, state, latest QBER,
+attackability; her own sessions are excluded). The dashboard refreshes from
+`communication.state_changed` — no manual reload — which requires
+`PROCESS_ASYNC=true` (the `.env.example` default) so the attack window is
+observably open.
+
 ### Security model highlights
 
 - bcrypt(cost 12); JWT HS256 with rotation + reuse detection (family revocation)
@@ -131,7 +144,7 @@ session resumes; re-attacks capped at `MAX_REATTACKS=3`.
 | B2 | Environment configuration | DONE | pydantic-settings; `.env.example`; prod fail-fast guards (secret/master-key/db checks) |
 | B3 | Database architecture | DONE | Declarative Base + naming convention; engine/session factory; transactional `session_scope`; commit-on-business-error semantics |
 | B4 | Database models | DONE | All Section 11 tables + 4 recommended; unique email/QSC-ID constraints; email lowercase normalization via model validator |
-| B5 | Migrations | DONE | Alembic wired to settings+metadata; baseline `10e630a4bfa9`; seed revision `0002_seeds` (6 protocol_configs, guarded bootstrap); verified fresh upgrade chain + idempotence; `097be7581625` adds qkd `seed` column for deterministic attack reruns |
+| B5 | Migrations | DONE | Alembic wired to settings+metadata; baseline `10e630a4bfa9`; seed revision `0002_seeds` (6 protocol_configs, guarded bootstrap); verified fresh upgrade chain + idempotence; `097be7581625` adds qkd `seed` column for deterministic attack reruns; `0003_enable_all_protocols` enables the five non-BB84 protocols; chain linearized so head `6b029071db87` revises 0003 |
 | B6 | Authentication | DONE | register/login/refresh/logout/me; refresh rotation + reuse detection; no-enumeration errors; disabled-account denial; audit rows |
 | B7 | Role-based authorization | DONE | `require_roles` deps; visibility matrix; ROLE_FORBIDDEN everywhere; fail-closed; role-matrix tests |
 | B8 | User management | DONE | GET/PATCH `/users/me`; admin list/search/disable; ADMIN_CANNOT_DISABLE_SELF; history preserved on disable |
@@ -147,7 +160,7 @@ session resumes; re-attacks capped at `MAX_REATTACKS=3`.
 | B18 | Key management | DONE | HKDF-SHA256 derivation bound to communication id; AES-GCM-at-rest under master key; rejected path stores nothing; never serialized |
 | B19 | Encryption/decryption | DONE | AES-256-GCM, random 12B nonce; refuses without acceptance; decrypt only DELIVERED/READ for owner; tamper detection |
 | B20 | AI protocol recommendation | DONE | Live feature snapshot (noise/security/attack-risk/distance); weighted scoring over capability matrix; softmax-margin confidence; explanation; full audit row; enabled+supported eligibility filter; invariant recommended==executed enforced by QkdService |
-| B21 | Protocol registry | DONE | ProtocolBase + registry; BB84 runnable; five registered stubs → 501; GET /protocols truth endpoint |
+| B21 | Protocol registry | DONE | ProtocolBase + registry; **all six protocols implemented and runnable** (BB84, B92, E91, SIX_STATE, SARG04, DECOY_BB84); GET /protocols truth endpoint |
 | B22 | Eve attacker system | DONE | Active-window target list (metadata-only); eve dashboard summary; attacker accounts created by admin; role boundaries tested |
 | B23 | Intercept-and-resend | DONE | Deterministic seeded rerun with Eve; new is_baseline=false row; attack row persisted (intercepted/modified/qber before-after); strength bounds 0.1–1.0 |
 | B24 | Attack detection | DONE | Same single threshold rule; DETECTED/NOT_DETECTED persisted on attack row; re-attack counter under cap |
@@ -162,9 +175,9 @@ session resumes; re-attacks capped at `MAX_REATTACKS=3`.
 | B33 | WebSocket events | DONE | ConnectionManager channels user/eve/admin/communications; JWT handshake (?token=) closing 4401/4403; heartbeat ping 30s; event envelope {type,communication_id,state,actor_role,payload,timestamp}; RealtimeService single sink after commit |
 | B34 | Validation/error hardening | DONE | extra=forbid request models; global handlers normalize all exceptions to envelope; no stack traces leaked; OpenAPI tags/descriptions |
 | B35 | Security hardening | DONE | Rate limits (auth/search/attack scopes, lazy settings resolution, 429 RATE_LIMITED); security headers middleware (nosniff/frame-deny/CSP/referrer); S19 no-key-leak grep test across endpoints |
-| B36 | Backend testing | DONE | 97 tests + integration-contract suite green; state machine, BB84 vectors, QBER, crypto, AI scoring, pipeline, attacks, hardening |
+| B36 | Backend testing | DONE | 105 tests + integration-contract suite green; state machine, BB84 vectors, QBER, crypto, AI scoring, pipeline, attacks, hardening |
 | B37 | Integration testing | DONE | Scenario A (secure READ) ×3; Scenario B (DETECTED→BLOCKED, inbox absence) ×3; back-to-back A+B; Flow 3 reconnect-resync via REST timeline replay — all pass |
-| B38 | Final validation | DONE | Full suite green; `docs/openapi.json` exported (39 paths incl. timeline + /security-reports alias); 4-migration chain verified fresh; WS live proof (real server + real socket + mid-run reconnect) executed |
+| B38 | Final validation | DONE | Full suite green; `docs/openapi.json` exported (39 paths incl. timeline + /security-reports alias); 5-migration chain verified fresh (`10e630a4bfa9` -> `0002_seeds` -> `097be7581625` -> `0003_enable_all_protocols` -> `6b029071db87`); WS live proof (real server + real socket + mid-run reconnect) executed |
 | INT | Frontend↔Backend integration | DONE | Event-log persistence + `GET /communications/{id}/timeline` (500), `/security-reports` alias, admin summary extras (`security_outcomes/protocol_usage/recent_audit` + user-name joins), message-detail `communication_id`, QKD `sample_json` + `?include_sample`, staged `attack.progress` emissions, per-transition `communication.state_changed` broadcast; frontend `VITE_ENABLE_MOCKS=0`, `useQkdRuns` requests sample; CORS 5173; WS channels + JWT handshake verified |
 
 **Result: 100+ tests passing (backend suite + integration contracts + E2E flows).**
@@ -180,5 +193,6 @@ Auth: register/login/refresh/logout/me · Users: me(PATCH)/search · Messages: c
   remains the source of truth.
 - SQLite is the dev/test default; set `DATABASE_URL` to PostgreSQL for prod
   (config fails fast in `QSC_ENV=prod` if not).
-- Non-BB84 protocols are registered-but-disabled stubs returning 501, exactly
-  as scoped for v1.
+- All six protocols (BB84, B92, E91, SIX_STATE, SARG04, DECOY_BB84) are
+  implemented and enabled via `0003_enable_all_protocols`; older dev DBs stamped
+  past 0003 can be repaired once with `scripts/backfill_0003_enable_protocols.py`.

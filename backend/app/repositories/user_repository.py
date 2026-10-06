@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.orm import Session
 
 from app.models import RefreshToken, User
@@ -88,6 +88,28 @@ class RefreshTokenRepository:
 
     def revoke(self, row: RefreshToken) -> None:
         row.revoked_at = datetime.now(timezone.utc)
+
+    def revoke_if_active(self, token_hash: str) -> Optional[RefreshToken]:
+        """Atomically revoke a token and report whether THIS call won.
+
+        Rotation must be a compare-and-swap: a plain read-then-write lets two
+        simultaneous refreshes both observe ``revoked_at IS NULL`` and both mint
+        a successor from one token. The ``UPDATE ... WHERE revoked_at IS NULL``
+        guarantees exactly one winner; every loser gets ``None`` and is treated
+        as reuse, so a single refresh token can never produce two live pairs.
+        """
+        row = self.get_any(token_hash)
+        if row is None:
+            return None
+        result = self.session.execute(
+            update(RefreshToken)
+            .where(RefreshToken.id == row.id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=datetime.now(timezone.utc))
+        )
+        if result.rowcount != 1:
+            return None
+        self.session.refresh(row)
+        return row
 
     def revoke_all_for_user(self, user_id: int) -> None:
         now = datetime.now(timezone.utc)

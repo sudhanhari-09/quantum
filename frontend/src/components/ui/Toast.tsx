@@ -4,6 +4,7 @@ const kindClass = {
   success: "border-success/40 bg-success/10 text-success",
   error: "border-danger/40 bg-danger/10 text-danger",
   info: "border-primary/40 bg-primary/10 text-primary",
+  warning: "border-warning/40 bg-warning/10 text-warning",
 } as const;
 
 /** Toast/notification center (F2/F32). */

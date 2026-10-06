@@ -85,6 +85,7 @@ export interface CommunicationSummary {
   message_status: MessageStatus;
   key_status: KeyStatus;
   qber: number | null;
+  threshold: number | null;
   attack_detected: boolean;
   created_at: string;
   completed_at: string | null;
@@ -93,10 +94,18 @@ export interface CommunicationSummary {
 /** Metadata-only view for EVE (Section 14.3). */
 export interface ActiveSession {
   id: number;
+  communication_id: number;
+  sender_id: number;
+  receiver_id: number;
   sender_name: string;
   receiver_name: string;
   protocol: Protocol | null;
   session_state: CommState;
+  status: CommState;
+  qber: number | null;
+  threshold: number | null;
+  attackable: boolean;
+  attack_types: string[];
   created_at: string;
 }
 

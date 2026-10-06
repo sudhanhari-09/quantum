@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 export interface Toast {
   id: number;
-  kind: "success" | "error" | "info";
+  kind: "success" | "error" | "info" | "warning";
   message: string;
 }
 

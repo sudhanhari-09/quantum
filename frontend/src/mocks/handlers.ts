@@ -39,7 +39,15 @@ function auth(req: Request): { id: number; role: Role } | null {
 
 function requireAuth(req: Request) {
   const session = auth(req);
-  if (!session) throw Object.assign(new Error(), { response: { status: 401 } });
+  if (!session) {
+    // Throwing a Response short-circuits the resolver, so unauthenticated calls
+    // answer with a real 401 + envelope exactly like the backend
+    // (400/500 leakage here previously hid the refresh-token flow).
+    throw HttpResponse.json(
+      { code: "TOKEN_REQUIRED", message: "TOKEN_REQUIRED" },
+      { status: 401 },
+    );
+  }
   return session;
 }
 
@@ -205,7 +213,7 @@ export const handlers = [
     const s = requireAuth(request);
     if (s.role !== "ATTACKER")
       return HttpResponse.json({ code: "ROLE_FORBIDDEN", message: "ROLE_FORBIDDEN" }, { status: 403 });
-    return HttpResponse.json({ items: db.activeSessions() });
+    return HttpResponse.json({ items: db.activeSessions(s.id) });
   }),
 
   http.get(p("/communications/:id/recommendation"), ({ request, params }) => {

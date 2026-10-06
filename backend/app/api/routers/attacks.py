@@ -80,7 +80,7 @@ def eve_summary(
 ):
     if eve.role != Role.ATTACKER:
         raise AppError("Attacker role required.", code="ROLE_FORBIDDEN", status_code=403)
-    return AttackSimulationService(session).eve_dashboard_summary()
+    return AttackSimulationService(session).eve_dashboard_summary(eve.id)
 
 
 @router.get("/{attack_id}")
@@ -110,4 +110,4 @@ def eve_dashboard_alias(
 ):
     if eve.role != Role.ATTACKER:
         raise AppError("Attacker role required.", code="ROLE_FORBIDDEN", status_code=403)
-    return AttackSimulationService(session).eve_dashboard_summary()
+    return AttackSimulationService(session).eve_dashboard_summary(eve.id)

@@ -16,6 +16,7 @@ class CreateMessageRequest(BaseModel):
     receiver_qsc_id: str = Field(min_length=1, max_length=20)
     content: str = Field(min_length=1, max_length=2000)
     security_requirement: Literal["LOW", "MEDIUM", "HIGH"] = "MEDIUM"
+    protocol: str | None = Field(default=None, max_length=32)
 
     @field_validator("receiver_qsc_id")
     @classmethod
@@ -23,6 +24,17 @@ class CreateMessageRequest(BaseModel):
         if not QSC_RE.match(v.strip().upper()):
             raise ValueError("QSC ID must match QSC-[A-Z0-9]{10}")
         return v.strip().upper()
+
+    @field_validator("protocol")
+    @classmethod
+    def normalize_protocol(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().upper()
+        allowed = {"BB84", "B92", "E91", "SIX_STATE", "SARG04", "DECOY_BB84"}
+        if v not in allowed:
+            raise ValueError(f"protocol must be one of: {', '.join(sorted(allowed))}")
+        return v
 
 
 class MessageCreatedResponse(BaseModel):

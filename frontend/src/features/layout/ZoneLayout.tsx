@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../core/authStore";
+import { logoutSession } from "../../queries/auth";
 import type { Role } from "../../core/constants/vocab";
 import { LiveIndicator } from "../../components/ui/FeedbackGlobal";
 import { Badge } from "../../components/ui/StatusPill";
@@ -65,7 +66,6 @@ const COLLAPSE_KEY = "qsc-sidebar-collapsed";
 
 export function ZoneLayout() {
   const user = useAuthStore((s) => s.user);
-  const clearSession = useAuthStore((s) => s.clearSession);
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -83,7 +83,8 @@ export function ZoneLayout() {
   const items = NAV[user.role];
 
   function logout() {
-    clearSession();
+    // Revokes the refresh token server-side, then clears local state.
+    void logoutSession();
     navigate("/login", { replace: true });
   }
 

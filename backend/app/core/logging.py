@@ -10,18 +10,19 @@ request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 
 
 class RequestIdLogFormatter(logging.Formatter):
-    """Formatter that injects the current request id into every record."""
+    """Formatter that injects the current request id into every record
+    and outputs: LEVEL  METHOD  PATH  STATUS [ERROR_CODE]"""
 
     def format(self, record: logging.LogRecord) -> str:
         record.request_id = request_id_ctx.get()
-        return super().format(record)
+        message = record.getMessage()
+        # Construct: LEVEL-8s followed by the message
+        return f"{record.levelname:<8s} {message}"
 
 
 def configure_logging(level: str = "INFO") -> None:
     handler = logging.StreamHandler(sys.stdout)
-    formatter = RequestIdLogFormatter(
-        "%(asctime)s %(levelname)-8s [%(request_id)s] %(name)s: %(message)s"
-    )
+    formatter = RequestIdLogFormatter("%(message)s")
     handler.setFormatter(formatter)
 
     root = logging.getLogger()

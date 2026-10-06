@@ -102,9 +102,13 @@ async def test_eve_role_boundary_on_active_list(client):
     items = resp.json()["items"]
     target = next((i for i in items if i["id"] == ctx["comm_id"]), None)
     assert target is not None
-    # metadata-only visibility per Section 14.3
-    assert set(target.keys()) == {"id", "sender_name", "receiver_name", "protocol",
-                                  "session_state", "created_at"}
+    # metadata-only visibility per Section 14.3 (extended Eve contract)
+    assert set(target.keys()) == {
+        "id", "communication_id", "sender_id", "receiver_id", "sender_name",
+        "receiver_name", "protocol", "session_state", "status", "qber",
+        "threshold", "attackable", "attack_types", "created_at",
+    }
+    assert target["attackable"] is True
     assert "ciphertext" not in str(items).lower()
 
     # a plain USER must be denied the attacker list

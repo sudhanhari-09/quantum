@@ -24,8 +24,9 @@ def test_registry_lists_all_six_protocols():
     described = {d["name"]: d for d in reg.describe_all()}
     assert described["BB84"]["supported"] is True
     assert described["E91"]["requires_entanglement"] is True
+    # All six protocols are now fully implemented and supported
     for name in ("B92", "SIX_STATE", "SARG04", "DECOY_BB84", "E91"):
-        assert described[name]["supported"] is False
+        assert described[name]["supported"] is True
 
 
 def test_registry_unknown_protocol_raises():
@@ -33,12 +34,21 @@ def test_registry_unknown_protocol_raises():
         default_registry().get("SHOR")
 
 
-def test_stub_run_raises_not_supported():
-    from app.protocols.stubs import E91Protocol
+def test_all_protocols_run_end_to_end():
+    """All six protocols must execute successfully with valid results."""
+    from app.protocols.base import ProtocolRunInput, default_registry
 
-    with pytest.raises(ProtocolNotSupported) as e:
-        E91Protocol().run(ProtocolRunInput(qubit_count=8, channel_noise=0.0, seed=1))
-    assert e.value.status_code == 501
+    reg = default_registry()
+    for name in ["BB84", "B92", "E91", "SIX_STATE", "SARG04", "DECOY_BB84"]:
+        res = reg.require_supported(name).run(
+            ProtocolRunInput(qubit_count=256, channel_noise=0.01, seed=42)
+        )
+        assert res.protocol == name
+        assert res.qubits_generated == 256
+        assert 0 <= res.qber <= 1
+        assert res.compared_bits > 0
+        assert len(res.alice_bits) == 256
+        assert len(res.bob_bits) == 256
 
 
 def test_bb84_end_to_end_via_registry():

@@ -16,6 +16,42 @@ from app.services.state_machine import ATTACK_WINDOW_STATES
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
+def _latest_qber(session: Session, comm_id: int):
+    row = (
+        session.query(QkdSession)
+        .filter(QkdSession.communication_id == comm_id)
+        .order_by(QkdSession.id.desc())
+        .first()
+    )
+    return (row.qber, row.threshold, row.key_status) if row else (None, None, "PENDING")
+
+
+def _name(session: Session, user_id: int) -> str:
+    u = session.get(User, user_id)
+    return u.name if u else "unknown"
+
+
+def _detail(session: Session, comm: CommunicationSession) -> dict:
+    msg = (
+        session.query(Message).filter(Message.communication_id == comm.id).first()
+    )
+    qber, threshold, key_status = _latest_qber(session, comm.id)
+    return {
+        "id": comm.id,
+        "sender": {"id": comm.sender_id, "name": _name(session, comm.sender_id)},
+        "receiver": {"id": comm.receiver_id, "name": _name(session, comm.receiver_id)},
+        "protocol": comm.protocol,
+        "session_status": comm.session_status,
+        "message_status": msg.status if msg else "PENDING",
+        "key_status": key_status if key_status else "PENDING",
+        "qber": qber,
+        "threshold": threshold,
+        "attack_detected": bool(msg.attack_detected) if msg else False,
+        "created_at": comm.created_at.isoformat(),
+        "completed_at": comm.completed_at.isoformat() if comm.completed_at else None,
+    }
+
+
 @router.get("/summary")
 def user_dashboard(
     session: Session = SessionDep,
@@ -90,16 +126,6 @@ def user_dashboard(
         .limit(5)
     ).all()
 
-    def _brief(c):
-        msg = session.query(Message).filter(Message.communication_id == c.id).first()
-        return {
-            "id": c.id,
-            "protocol": c.protocol,
-            "session_status": c.session_status,
-            "message_status": msg.status if msg else None,
-            "created_at": c.created_at.isoformat(),
-        }
-
     return {
         "messages_sent": int(sent_count),
         "messages_received": int(received),
@@ -108,5 +134,5 @@ def user_dashboard(
         "active_communications": int(active),
         "attacks_on_mine": int(attacks_on_mine),
         "average_qber": round(float(avg_qber), 6) if avg_qber is not None else None,
-        "recent": [_brief(c) for c in recent_rows],
+        "recent": [_detail(session, c) for c in recent_rows],
     }

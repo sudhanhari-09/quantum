@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiGet, apiPatch, apiPost } from "../core/apiClient";
+import { ACTIVE_SESSIONS_KEY } from "./keys";
 import type {
   ActiveSession,
   AdminDashboardSummary,
@@ -50,6 +51,7 @@ export function sendMessage(input: {
   receiver_qsc_id: string;
   content: string;
   security_requirement?: string;
+  protocol?: string | null;
 }) {
   return apiPost<{ message_id: number; communication_id: number }>("/messages", input);
 }
@@ -109,7 +111,7 @@ export function useCommunications(scope: "mine" | "history" = "history") {
 
 export function useActiveSessions(enabled = true) {
   return useQuery({
-    queryKey: ["communications", "active"],
+    queryKey: ACTIVE_SESSIONS_KEY,
     queryFn: () => apiGet<{ items: ActiveSession[] }>("/communications/active"),
     enabled,
   });

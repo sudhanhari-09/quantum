@@ -61,7 +61,7 @@ class Settings(BaseSettings):
 
     # bootstrap
     enable_admin_bootstrap: bool = False
-    admin_email: str = "admin@qsc.local"
+    admin_email: str = "admin@qsc.dev"
     admin_password: str = ""
     admin_name: str = "Platform Admin"
 

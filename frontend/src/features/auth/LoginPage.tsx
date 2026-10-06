@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { messageForCode } from "../../core/errors";
+import { SESSION_END_MESSAGES, type SessionEndReason } from "../../core/session";
 import { ROLE_HOME, type Role } from "../../core/constants/vocab";
 import { useAuthStore } from "../../core/authStore";
 import { loginUser } from "../../queries/auth";
@@ -16,11 +17,20 @@ import {
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const setSession = useAuthStore((s) => s.setSession);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
+
+  // Explains WHY the user is back on the login page (expired/reused/revoked).
+  const endedReason = (location.state as { sessionEnded?: SessionEndReason } | null)
+    ?.sessionEnded;
+
+  useEffect(() => {
+    if (endedReason) setError(SESSION_END_MESSAGES[endedReason]);
+  }, [endedReason]);
 
   async function submit() {
     setError(undefined);

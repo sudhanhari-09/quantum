@@ -1,10 +1,10 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
-  useState,
   type ReactNode,
 } from "react";
 import { WsClient } from "./wsClient";
@@ -16,6 +16,12 @@ type Subscribe = (type: string | "*", handler: (e: WsEnvelope) => void) => () =>
 
 interface WsCtx {
   subscribe: Subscribe;
+}
+
+interface Subscription {
+  type: string;
+  handler: (e: WsEnvelope) => void;
+  detach: () => void;
 }
 
 const Ctx = createContext<WsCtx>({ subscribe: () => () => undefined });
@@ -31,39 +37,70 @@ function channelsForRole(role: Role): string[] {
   }
 }
 
-/** Opens the role-appropriate channels once authenticated (F4/F31). */
+/**
+ * Opens the role-appropriate channels once the backend has CONFIRMED the
+ * identity (F4/F31).
+ *
+ * Sockets are keyed on identity — `authStatus` + `role` — and never on the
+ * access token, so a token rotation does not tear down and rebuild live
+ * sockets (which is what used to produce duplicate connections). `subscribe`
+ * is stable and re-binds to the current clients, so re-renders cannot double
+ * subscribe either.
+ */
 export function WsProvider({ children }: { children: ReactNode }) {
-  const [tick, setTick] = useState(0);
   const clientsRef = useRef<WsClient[]>([]);
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const role = useAuthStore((s) => s.user?.role);
+  const subscriptionsRef = useRef<Set<Subscription>>(new Set());
+  const authStatus = useAuthStore((s) => s.authStatus);
+  const role = useAuthStore((s) => s.user?.role ?? null);
 
-  // Re-create clients when identity changes.
+  /** Point every subscriber at the current client set exactly once. */
+  const rebind = useCallback(() => {
+    for (const subscription of subscriptionsRef.current) {
+      subscription.detach();
+      const offs = clientsRef.current.map((client) =>
+        subscription.type === "*"
+          ? client.onAny(subscription.handler)
+          : client.on(subscription.type, subscription.handler),
+      );
+      subscription.detach = () => offs.forEach((off) => off());
+    }
+  }, []);
+
   useEffect(() => {
-    clientsRef.current.forEach((c) => c.close());
-    clientsRef.current = [];
-    if (!accessToken || !role) return undefined;
-    const clients = channelsForRole(role).map((ch) => new WsClient(ch));
-    clients.forEach((c) => c.connect());
+    // Never connect before authentication is resolved, and only once per role.
+    if (authStatus !== "authenticated" || !role) return undefined;
+    const clients = channelsForRole(role).map((channel) => new WsClient(channel));
     clientsRef.current = clients;
-    setTick((t) => t + 1);
+    rebind();
+    clients.forEach((client) => client.connect());
     return () => {
-      clients.forEach((c) => c.close());
+      clientsRef.current.forEach((client) => client.close());
       clientsRef.current = [];
+      rebind();
     };
-  }, [accessToken, role]);
+  }, [authStatus, role, rebind]);
 
-  const value = useMemo<WsCtx>(
-    () => ({
-      subscribe: (type, handler) => {
-        const offs = clientsRef.current.map((c) =>
-          type === "*" ? c.onAny(handler) : c.on(type, handler),
-        );
-        return () => offs.forEach((off) => off());
-      },
-    }),
-    [tick],
+  const subscribe = useCallback<Subscribe>(
+    (type, handler) => {
+      const subscription: Subscription = {
+        type,
+        handler,
+        detach: () => undefined,
+      };
+      const offs = clientsRef.current.map((client) =>
+        type === "*" ? client.onAny(handler) : client.on(type, handler),
+      );
+      subscription.detach = () => offs.forEach((off) => off());
+      subscriptionsRef.current.add(subscription);
+      return () => {
+        subscription.detach();
+        subscriptionsRef.current.delete(subscription);
+      };
+    },
+    [],
   );
+
+  const value = useMemo<WsCtx>(() => ({ subscribe }), [subscribe]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

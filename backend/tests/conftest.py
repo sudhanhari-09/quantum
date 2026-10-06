@@ -16,6 +16,10 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_TMP_DIR.replace(os.sep, '/')}/qsc_tes
 os.environ["QSC_MASTER_KEY"] = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="  # 32 bytes b64
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-not-for-production"
 os.environ.pop("ENABLE_ADMIN_BOOTSTRAP", None)
+# Tests run the synchronous pipeline by default (individual tests opt into
+# async mode explicitly); this keeps the suite deterministic no matter what a
+# developer's local .env contains for the live-demo flag.
+os.environ["PROCESS_ASYNC"] = "false"
 # Generous limits for functional tests; B35 has a dedicated limiting test.
 os.environ["RATE_LIMIT_ATTACK_PER_MIN"] = "1000"
 os.environ["RATE_LIMIT_SEARCH_PER_MIN"] = "1000"

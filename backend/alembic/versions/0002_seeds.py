@@ -28,11 +28,11 @@ PROTOCOL_SEEDS = [
         "max_distance_km": 100,
         "maturity": 1.0,
     }),
-    ("B92", False, "0.1100", 256, {"noise_resistance": 0.50, "key_efficiency": 0.25, "max_distance_km": 80, "maturity": 0.7}),
-    ("E91", False, "0.1200", 128, {"noise_resistance": 0.70, "key_efficiency": 0.50, "max_distance_km": 150, "maturity": 0.5}),
-    ("SIX_STATE", False, "0.1300", 128, {"noise_resistance": 0.75, "key_efficiency": 0.30, "max_distance_km": 90, "maturity": 0.6}),
-    ("SARG04", False, "0.1100", 256, {"noise_resistance": 0.60, "key_efficiency": 0.40, "max_distance_km": 85, "maturity": 0.6}),
-    ("DECOY_BB84", False, "0.1000", 512, {"noise_resistance": 0.65, "key_efficiency": 0.70, "max_distance_km": 120, "maturity": 0.8}),
+    ("B92", True, "0.1100", 256, {"noise_resistance": 0.50, "key_efficiency": 0.50, "max_distance_km": 80, "maturity": 0.7}),
+    ("E91", True, "0.1200", 128, {"noise_resistance": 0.70, "key_efficiency": 0.50, "max_distance_km": 150, "maturity": 0.5}),
+    ("SIX_STATE", True, "0.1300", 128, {"noise_resistance": 0.75, "key_efficiency": 0.30, "max_distance_km": 90, "maturity": 0.6}),
+    ("SARG04", True, "0.1100", 256, {"noise_resistance": 0.60, "key_efficiency": 0.40, "max_distance_km": 85, "maturity": 0.6}),
+    ("DECOY_BB84", True, "0.1000", 512, {"noise_resistance": 0.65, "key_efficiency": 0.70, "max_distance_km": 120, "maturity": 0.8}),
 ]
 
 
@@ -121,7 +121,7 @@ def _bootstrap_accounts() -> None:
         )
 
     _ensure(settings.admin_email, settings.admin_name or "Platform Admin", "ADMIN")
-    _ensure("eve@qsc.local", "Eve (Simulated Attacker)", "ATTACKER")
+    _ensure("eve@qsc.dev", "Eve (Simulated Attacker)", "ATTACKER")
 
 
 def upgrade() -> None:

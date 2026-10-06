@@ -240,8 +240,12 @@ async def test_flow_2_eve_attack_blocks_message(client):
     active = (await client.get("/api/v1/communications/active",
                                headers=auth_headers(etok))).json()["items"]
     target = next(a for a in active if a["id"] == comm_id)
-    assert set(target.keys()) == {"id", "sender_name", "receiver_name",
-                                  "protocol", "session_state", "created_at"}
+    assert {"id", "communication_id", "sender_id", "receiver_id", "sender_name",
+            "receiver_name", "protocol", "session_state", "status", "qber",
+            "threshold", "attackable", "attack_types",
+            "created_at"} <= set(target.keys())
+    assert target["communication_id"] == comm_id
+    assert target["attackable"] is True
 
     # launch simulated intercept-and-resend at max strength
     attack = (

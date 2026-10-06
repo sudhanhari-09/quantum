@@ -107,6 +107,7 @@ export const WS_EVENT_TYPES = [
   "communication.state_changed",
   "ai.analysis_started",
   "ai.protocol_selected",
+  "protocol.adaptive_retry",
   "qkd.started",
   "qkd.progress",
   "qkd.completed",
